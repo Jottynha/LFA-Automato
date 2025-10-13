@@ -2,12 +2,32 @@ program teste;
 
 {$mode fpc}
 
+// IntToStr em Pascal puro (evita depender de SysUtils)
+function IntToStr(n: longint): ansistring;
+var s: ansistring; neg: boolean; d: longint;
+begin
+  if n = 0 then begin IntToStr := '0'; exit; end;
+  neg := n < 0; if neg then n := -n;
+  s := '';
+  while n > 0 do
+  begin
+    d := n mod 10;
+    s := Chr(Ord('0') + d) + s;
+    n := n div 10;
+  end;
+  if neg then s := '-' + s;
+  IntToStr := s;
+end;
+
 type
   TStrArray = array of ansistring;
   TTransition = record
     src, dst, sym: ansistring;
   end;
   TTransArray = array of TTransition;
+
+const
+  EPS: ansistring = '&';
 
 // ----------------- Utilidades de string/arrays -----------------
 procedure AddStr(var A: TStrArray; const S: ansistring);
@@ -18,6 +38,20 @@ begin
   A[n] := S;
 end;
 
+procedure AddStrUnique(var A: TStrArray; const S: ansistring);
+var i: longint;
+begin
+  for i := 0 to High(A) do if A[i] = S then exit;
+  AddStr(A, S);
+end;
+
+function ContainsStr(const A: TStrArray; const S: ansistring): boolean;
+var i: longint;
+begin
+  for i := 0 to High(A) do if A[i] = S then begin ContainsStr := true; exit; end;
+  ContainsStr := false;
+end;
+
 procedure AddTrans(var A: TTransArray; const S1, S2, S3: ansistring);
 var n: longint;
 begin
@@ -26,8 +60,16 @@ begin
   A[n].src := S1; A[n].dst := S2; A[n].sym := S3;
 end;
 
+procedure AddTransUnique(var A: TTransArray; const S1, S2, S3: ansistring);
+var i: longint;
+begin
+  for i := 0 to High(A) do
+    if (A[i].src=S1) and (A[i].dst=S2) and (A[i].sym=S3) then exit;
+  AddTrans(A, S1, S2, S3);
+end;
+
 function TrimSpaces(const S: ansistring): ansistring;
-var i, l, r: longint;
+var l, r: longint;
 begin
   l := 1; r := Length(S);
   while (l <= r) and (S[l] in [#9,#10,#13,' ']) do Inc(l);
@@ -59,52 +101,6 @@ begin
   // busca simples
   p := Pos(pattern, JSON);
   FindKeyPos := p;
-end;
-
-// Extrai a seção entre colchetes que segue a chave (ex: "alfabeto": [ ... ])
-procedure ExtractBracketSection(const JSON: ansistring; startPos: longint; var content: ansistring; var ok: boolean);
-var i, n, depth: longint; inStr: boolean; ch: char;
-begin
-  content := '';
-  ok := false;
-  n := Length(JSON);
-  // encontrar primeiro '[' após startPos
-  i := startPos;
-  while (i <= n) and (JSON[i] <> '[') do Inc(i);
-  if (i > n) or (JSON[i] <> '[') then exit;
-  // agora varrer até colchete correspondente, respeitando strings
-  depth := 0; inStr := false;
-  while i <= n do
-  begin
-    ch := JSON[i];
-    if inStr then
-    begin
-      if ch = '"' then inStr := false
-      else if ch = '\\' then // pular escape
-      begin
-        if i < n then Inc(i);
-      end;
-    end
-    else
-    begin
-      if ch = '"' then inStr := true
-      else if ch = '[' then Inc(depth)
-      else if ch = ']' then
-      begin
-        Dec(depth);
-        if depth = 0 then
-        begin
-          // incluir conteúdo sem os colchetes externos
-          // conteúdo começa no primeiro char após '[' original
-          // precisamos achar o início novamente
-          // retroceder para achar o '[' inicial
-          // melhor: refazer: encontrar posInicial '[' em j0
-        end;
-      end;
-    end;
-    Inc(i);
-    if (depth = 0) and (content <> '') then ;
-  end;
 end;
 
 // Versão com retorno de índices: encontra [ ... ] e retorna início e fim dos colchetes (inclusive)
@@ -207,6 +203,121 @@ begin
   end;
 end;
 
+// --------- Operações de autômato (puro) ---------
+
+function GetTargets(const Trans: TTransArray; const Src, Sym: ansistring): TStrArray;
+var
+  i: longint;
+  res: TStrArray;
+begin
+  SetLength(res, 0);
+  for i := 0 to High(Trans) do
+    if (Trans[i].src = Src) and (Trans[i].sym = Sym) then
+      AddStrUnique(res, Trans[i].dst);
+  GetTargets := res;
+end;
+
+function UnionStr(const A, B: TStrArray): TStrArray;
+var i: longint; tmp: TStrArray;
+begin
+  tmp := A;
+  for i := 0 to High(B) do AddStrUnique(tmp, B[i]);
+  UnionStr := tmp;
+end;
+
+function IntersectsStr(const A, B: TStrArray): boolean;
+var i: longint;
+begin
+  for i := 0 to High(A) do if ContainsStr(B, A[i]) then begin IntersectsStr := true; exit; end;
+  IntersectsStr := false;
+end;
+
+function EpsClosure(const Trans: TTransArray; const StartStates: TStrArray): TStrArray;
+var stack, res: TStrArray; i: longint; s: ansistring; tgts: TStrArray;
+begin
+  res := StartStates;
+  stack := StartStates;
+  while Length(stack) > 0 do
+  begin
+    s := stack[High(stack)];
+    SetLength(stack, Length(stack)-1);
+    tgts := GetTargets(Trans, s, EPS);
+    for i := 0 to High(tgts) do
+      if not ContainsStr(res, tgts[i]) then begin AddStr(res, tgts[i]); AddStr(stack, tgts[i]); end;
+  end;
+  EpsClosure := res;
+end;
+
+procedure ConvertMultipleInitialsToAFNEps(var States, Initials: TStrArray; var Trans: TTransArray);
+var i: longint; base, novo: ansistring; idx: longint;
+begin
+  if Length(Initials) <= 1 then exit;
+  base := 'Qi'; novo := base; idx := 0;
+  while ContainsStr(States, novo) do begin Inc(idx); novo := base + IntToStr(idx); end;
+  AddStrUnique(States, novo);
+  for i := 0 to High(Initials) do AddTransUnique(Trans, novo, Initials[i], EPS);
+  SetLength(Initials, 1); Initials[0] := novo;
+  WriteLn('Novo inicial criado: ', novo, ' com transições & para antigos iniciais.');
+end;
+
+procedure RemoveEpsilon(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+var i, j, k: longint; p, q, r, sym: ansistring; Ep, temp, U: TStrArray; newTrans: TTransArray; newFinals: TStrArray; tg: TStrArray;
+begin
+  SetLength(newTrans, 0);
+  SetLength(newFinals, 0);
+  // finais: recalculados via fecho-ε
+  for i := 0 to High(States) do
+  begin
+    p := States[i];
+    Ep := EpsClosure(Trans, TStrArray([p]));
+    if IntersectsStr(Ep, Finals) then AddStrUnique(newFinals, p);
+  end;
+  // transições por símbolo (exceto EPS)
+  for i := 0 to High(States) do
+  begin
+    p := States[i];
+    Ep := EpsClosure(Trans, TStrArray([p]));
+    for j := 0 to High(Alphabet) do
+    begin
+      sym := Alphabet[j];
+      if sym = EPS then continue;
+      SetLength(temp, 0);
+      for k := 0 to High(Ep) do
+      begin
+        q := Ep[k];
+        tg := GetTargets(Trans, q, sym);
+        temp := UnionStr(temp, tg);
+      end;
+      U := EpsClosure(Trans, temp);
+      for k := 0 to High(U) do
+      begin
+        r := U[k];
+        AddTransUnique(newTrans, p, r, sym);
+      end;
+    end;
+  end;
+  Trans := newTrans;
+  Finals := newFinals;
+  WriteLn('Removidas transições & (epsilon).');
+end;
+
+// ----------------- Exibição e Menu -----------------
+procedure PrintAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
+var i: longint;
+begin
+  WriteLn('Alfabeto:');
+  for i := 0 to High(Alphabet) do WriteLn('  ', Alphabet[i]);
+  WriteLn('Estados:');
+  for i := 0 to High(States) do WriteLn('  ', States[i]);
+  WriteLn('Iniciais:');
+  for i := 0 to High(Initials) do WriteLn('  ', Initials[i]);
+  WriteLn('Finais:');
+  for i := 0 to High(Finals) do WriteLn('  ', Finals[i]);
+  WriteLn('Transicoes:');
+  for i := 0 to High(Trans) do
+    WriteLn('  ', Trans[i].src, ' --', Trans[i].sym, '--> ', Trans[i].dst);
+end;
+
 // ----------------- Programa principal -----------------
 var
   path, json: ansistring;
@@ -214,7 +325,7 @@ var
   section: ansistring;
   alphabet, states, initials, finals: TStrArray;
   transicoes: TTransArray;
-  i: longint;
+  op: ansistring;
 begin
   if ParamCount >= 1 then path := ParamStr(1) else path := 'data/automato.json';
   json := ReadAllText(path);
@@ -269,20 +380,22 @@ begin
     ExtractTransitions(section, transicoes);
   end;
 
-  // Exibir
-  WriteLn('Alfabeto:');
-  for i := 0 to High(alphabet) do WriteLn('  ', alphabet[i]);
-
-  WriteLn('Estados:');
-  for i := 0 to High(states) do WriteLn('  ', states[i]);
-
-  WriteLn('Iniciais:');
-  for i := 0 to High(initials) do WriteLn('  ', initials[i]);
-
-  WriteLn('Finais:');
-  for i := 0 to High(finals) do WriteLn('  ', finals[i]);
-
-  WriteLn('Transicoes:');
-  for i := 0 to High(transicoes) do
-    WriteLn('  ', transicoes[i].src, ' --', transicoes[i].sym, '--> ', transicoes[i].dst);
+  // Menu
+  while true do
+  begin
+    WriteLn; WriteLn('--- MENU ---');
+    WriteLn('1) Converter múltiplos estados iniciais -> AFN-& (novo inicial com & para cada antigo)');
+    WriteLn('2) Converter AFN-& para AFN (remover &)');
+    WriteLn('3) Mostrar autômato');
+    WriteLn('0) Sair');
+    Write('Escolha: '); ReadLn(op);
+    case op of
+      '1': begin ConvertMultipleInitialsToAFNEps(states, initials, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '2': begin RemoveEpsilon(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '3': PrintAutomaton(alphabet, states, initials, finals, transicoes);
+      '0': break;
+    else
+      WriteLn('Opção inválida.');
+    end;
+  end;
 end.
