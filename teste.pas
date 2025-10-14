@@ -232,6 +232,34 @@ begin
   IntersectsStr := false;
 end;
 
+// ordenação simples para normalizar chaves de conjuntos
+procedure SortStrArray(var A: TStrArray);
+var i, j, min: longint; tmp: ansistring;
+begin
+  for i := 0 to High(A) do
+  begin
+    min := i;
+    for j := i+1 to High(A) do
+      if A[j] < A[min] then min := j;
+    if min <> i then begin tmp := A[i]; A[i] := A[min]; A[min] := tmp; end;
+  end;
+end;
+
+function KeyFromSet(const S: TStrArray): ansistring;
+var tmp: TStrArray; i: longint; key: ansistring;
+begin
+  tmp := S;
+  SortStrArray(tmp);
+  key := '{';
+  for i := 0 to High(tmp) do
+  begin
+    if i > 0 then key := key + ',';
+    key := key + tmp[i];
+  end;
+  key := key + '}';
+  KeyFromSet := key;
+end;
+
 function EpsClosure(const Trans: TTransArray; const StartStates: TStrArray): TStrArray;
 var stack, res: TStrArray; i: longint; s: ansistring; tgts: TStrArray;
 begin
@@ -299,6 +327,352 @@ begin
   Trans := newTrans;
   Finals := newFinals;
   WriteLn('Removidas transições & (epsilon).');
+end;
+
+// NFA -> DFA (construção por subconjuntos; considera fecho-ε)
+procedure NFAToDFA(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+var
+  startClosure, Tset, moveSet, Uset: TStrArray;
+  keys, names, queue, seen: TStrArray;
+  newStates, newFinals: TStrArray;
+  newTrans: TTransArray;
+  curKey, Ukey, nameT, nameU, sym: ansistring;
+  i, j: longint;
+
+  function FindNameByKey(const Key: ansistring): ansistring;
+  var p: longint; nm: ansistring;
+  begin
+    nm := '';
+    for p := 0 to High(keys) do if keys[p] = Key then begin nm := names[p]; break; end;
+    FindNameByKey := nm;
+  end;
+
+  procedure EnsureMapping(const Key: ansistring; var Name: ansistring);
+  var nm: ansistring;
+  begin
+    nm := FindNameByKey(Key);
+    if nm <> '' then begin Name := nm; exit; end;
+    nm := 'S' + IntToStr(Length(keys));
+    AddStr(keys, Key);
+    AddStr(names, nm);
+    AddStr(newStates, nm);
+    Name := nm;
+  end;
+
+  function Dequeue(var Q: TStrArray; var Key: ansistring): boolean;
+  var t: longint;
+  begin
+    if Length(Q) = 0 then begin Dequeue := false; exit; end;
+    Key := Q[0];
+    for t := 1 to High(Q) do Q[t-1] := Q[t];
+    SetLength(Q, Length(Q)-1);
+    Dequeue := true;
+  end;
+
+  function SeenKey(const Key: ansistring): boolean;
+  begin
+    SeenKey := ContainsStr(seen, Key);
+  end;
+
+  procedure MarkSeen(const Key: ansistring);
+  begin
+    AddStrUnique(seen, Key);
+  end;
+
+  function KeyToStates(const Key: ansistring): TStrArray;
+  var s: ansistring; i: longint; part: ansistring; ret: TStrArray;
+  begin
+    s := Key;
+    if (Length(s) >= 2) and (s[1] = '{') and (s[Length(s)] = '}') then s := Copy(s, 2, Length(s)-2);
+    SetLength(ret, 0); part := '';
+    for i := 1 to Length(s) do
+    begin
+      if s[i] = ',' then begin AddStrUnique(ret, part); part := ''; end
+      else part := part + s[i];
+    end;
+    if part <> '' then AddStrUnique(ret, part);
+    KeyToStates := ret;
+  end;
+
+begin
+  // fecho-ε dos iniciais
+  startClosure := EpsClosure(Trans, Initials);
+
+  SetLength(keys, 0); SetLength(names, 0);
+  SetLength(queue, 0); SetLength(seen, 0);
+  SetLength(newStates, 0); SetLength(newFinals, 0);
+  SetLength(newTrans, 0);
+
+  curKey := KeyFromSet(startClosure);
+  EnsureMapping(curKey, nameT);
+  AddStr(queue, curKey);
+
+  // BFS em conjuntos
+  while Dequeue(queue, curKey) do
+  begin
+    if SeenKey(curKey) then continue;
+    MarkSeen(curKey);
+    Tset := KeyToStates(curKey);
+    nameT := FindNameByKey(curKey);
+
+    if IntersectsStr(Tset, Finals) then AddStrUnique(newFinals, nameT);
+
+    for j := 0 to High(Alphabet) do
+    begin
+      sym := Alphabet[j];
+      if sym = EPS then continue;
+      SetLength(moveSet, 0);
+      for i := 0 to High(Tset) do
+        moveSet := UnionStr(moveSet, GetTargets(Trans, Tset[i], sym));
+      Uset := EpsClosure(Trans, moveSet);
+      Ukey := KeyFromSet(Uset);
+      EnsureMapping(Ukey, nameU);
+      AddTransUnique(newTrans, nameT, nameU, sym);
+      if (Length(Uset) > 0) and (not SeenKey(Ukey)) then AddStr(queue, Ukey);
+    end;
+  end;
+
+  // aplicar novo automato
+  States := newStates;
+  SetLength(Initials, 1); Initials[0] := FindNameByKey(KeyFromSet(startClosure));
+  Finals := newFinals;
+  Trans := newTrans;
+  WriteLn('Construído AFD por subconjuntos.');
+end;
+
+// ----------------- Minimização de AFD (Hopcroft) -----------------
+procedure MinimizeDFAHopcroft(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+var
+  allStates, finalsCopy, alphabetCopy: TStrArray;
+  i, j, k: longint;
+  needDead: boolean;
+  deadName: ansistring;
+  sym, dst: ansistring;
+  // Partições
+  P, W, newP: array of TStrArray;
+  Cblock, X, inter, diff: TStrArray;
+  blockF, blockNF: TStrArray;
+  blockMapFrom, blockMapTo: TStrArray;
+  newStates, newInitials, newFinals: TStrArray;
+  newTrans: TTransArray;
+
+  function IsDFA: boolean;
+  var a, b: longint;
+  begin
+    for a := 0 to High(Trans) do
+      for b := a+1 to High(Trans) do
+        if (Trans[a].src = Trans[b].src) and (Trans[a].sym = Trans[b].sym) then
+        begin IsDFA := false; exit; end;
+    IsDFA := true;
+  end;
+
+  function UniqueName(const Base: ansistring): ansistring;
+  var idx: longint; cand: ansistring;
+  begin
+    idx := 0; cand := Base;
+    while ContainsStr(States, cand) do begin cand := Base + IntToStr(idx); Inc(idx); end;
+    UniqueName := cand;
+  end;
+
+  function DetDest(const S0, Sym0: ansistring): ansistring;
+  var tarr: TStrArray;
+  begin
+    tarr := GetTargets(Trans, S0, Sym0);
+    if Length(tarr) > 0 then DetDest := tarr[0] else DetDest := '';
+  end;
+
+  procedure IntersectStr(const A, B: TStrArray; var OutArr: TStrArray);
+  var u: longint;
+  begin
+    SetLength(OutArr, 0);
+    for u := 0 to High(A) do if ContainsStr(B, A[u]) then AddStr(OutArr, A[u]);
+  end;
+
+  procedure DiffStr(const A, B: TStrArray; var OutArr: TStrArray);
+  var u: longint;
+  begin
+    SetLength(OutArr, 0);
+    for u := 0 to High(A) do if not ContainsStr(B, A[u]) then AddStr(OutArr, A[u]);
+  end;
+
+  function BlocksEqualSet(const X0, Y0: TStrArray): boolean;
+  var a1, a2: TStrArray; u: longint;
+  begin
+    a1 := X0; a2 := Y0; SortStrArray(a1); SortStrArray(a2);
+    if Length(a1) <> Length(a2) then begin BlocksEqualSet := false; exit; end;
+    for u := 0 to High(a1) do if a1[u] <> a2[u] then begin BlocksEqualSet := false; exit; end;
+    BlocksEqualSet := true;
+  end;
+
+  function IsBlockInQueue(const Block: TStrArray; var idx: longint): boolean;
+  var t: longint;
+  begin
+    for t := 0 to High(W) do
+      if BlocksEqualSet(W[t], Block) then begin idx := t; IsBlockInQueue := true; exit; end;
+    idx := -1; IsBlockInQueue := false;
+  end;
+
+  procedure EnqueueBlock(const Block: TStrArray);
+  var wlen: longint;
+  begin
+    wlen := Length(W);
+    SetLength(W, wlen+1);
+    W[wlen] := Block;
+  end;
+
+  function DequeueBlock(var Block: TStrArray): boolean;
+  var wlen, t: longint;
+  begin
+    wlen := Length(W);
+    if wlen = 0 then begin DequeueBlock := false; exit; end;
+    Block := W[0];
+    for t := 1 to wlen-1 do W[t-1] := W[t];
+    SetLength(W, wlen-1);
+    DequeueBlock := true;
+  end;
+
+  function MapState(const S0: ansistring): ansistring;
+  var q: longint;
+  begin
+    for q := 0 to High(blockMapFrom) do if blockMapFrom[q] = S0 then begin MapState := blockMapTo[q]; exit; end;
+    MapState := S0;
+  end;
+
+var idxW, tlen, t: longint; name: ansistring;
+begin
+  if not IsDFA then begin WriteLn('Aviso: autômato não determinístico. Converta para AFD antes de minimizar.'); exit; end;
+
+  // Copiar bases
+  allStates := States; alphabetCopy := Alphabet;
+
+  // Completar AFD com DEAD se necessário
+  needDead := false;
+  for i := 0 to High(allStates) do
+    for j := 0 to High(alphabetCopy) do
+      if alphabetCopy[j] <> EPS then
+        if Length(GetTargets(Trans, allStates[i], alphabetCopy[j])) = 0 then needDead := true;
+
+  if needDead then
+  begin
+    deadName := UniqueName('DEAD');
+    AddStrUnique(States, deadName);
+    // loops do DEAD
+    for j := 0 to High(alphabetCopy) do if alphabetCopy[j] <> EPS then AddTransUnique(Trans, deadName, deadName, alphabetCopy[j]);
+    // completar faltantes
+    for i := 0 to High(allStates) do
+      for j := 0 to High(alphabetCopy) do if alphabetCopy[j] <> EPS then
+        if Length(GetTargets(Trans, allStates[i], alphabetCopy[j])) = 0 then
+          AddTransUnique(Trans, allStates[i], deadName, alphabetCopy[j]);
+    // atualizar lista de estados
+    allStates := States;
+  end;
+
+  // Partições iniciais
+  SetLength(blockF, 0); SetLength(blockNF, 0);
+  for i := 0 to High(allStates) do
+    if ContainsStr(Finals, allStates[i]) then AddStr(blockF, allStates[i])
+    else AddStr(blockNF, allStates[i]);
+
+  SetLength(P, 0);
+  if Length(blockF) > 0 then begin SetLength(P, Length(P)+1); P[High(P)] := blockF; end;
+  if Length(blockNF) > 0 then begin SetLength(P, Length(P)+1); P[High(P)] := blockNF; end;
+
+  // W := P
+  SetLength(W, Length(P));
+  for i := 0 to High(P) do W[i] := P[i];
+
+  // Refinamento
+  while DequeueBlock(Cblock) do
+  begin
+    for j := 0 to High(alphabetCopy) do
+    begin
+      sym := alphabetCopy[j]; if sym = EPS then continue;
+      // X = { q | delta(q, sym) em Cblock }
+      SetLength(X, 0);
+      for i := 0 to High(allStates) do
+      begin
+        dst := DetDest(allStates[i], sym);
+        if ContainsStr(Cblock, dst) then AddStr(X, allStates[i]);
+      end;
+
+      // newP = P refinado por X
+      SetLength(newP, 0);
+      for i := 0 to High(P) do
+      begin
+        IntersectStr(P[i], X, inter);
+        DiffStr(P[i], X, diff);
+        if (Length(inter) > 0) and (Length(diff) > 0) then
+        begin
+          // substitui Y por inter e diff
+          SetLength(newP, Length(newP)+1); newP[High(newP)] := inter;
+          SetLength(newP, Length(newP)+1); newP[High(newP)] := diff;
+          // Atualiza W
+          if IsBlockInQueue(P[i], idxW) then
+          begin
+            // remove P[i] de W, adiciona ambos
+            tlen := Length(W);
+            for t := idxW+1 to tlen-1 do W[t-1] := W[t];
+            SetLength(W, tlen-1);
+            EnqueueBlock(inter); EnqueueBlock(diff);
+          end
+          else
+          begin
+            if Length(inter) <= Length(diff) then EnqueueBlock(inter) else EnqueueBlock(diff);
+          end;
+        end
+        else
+        begin
+          SetLength(newP, Length(newP)+1); newP[High(newP)] := P[i];
+        end;
+      end;
+      P := newP;
+    end;
+  end;
+
+  // Construir mapeamento estado -> bloco
+  SetLength(blockMapFrom, 0); SetLength(blockMapTo, 0);
+  for i := 0 to High(P) do
+  begin
+    name := 'M' + IntToStr(i);
+    for k := 0 to High(P[i]) do
+    begin
+      AddStr(blockMapFrom, P[i][k]);
+      AddStr(blockMapTo, name);
+    end;
+  end;
+
+  // Novos estados
+  SetLength(newStates, 0);
+  for i := 0 to High(P) do
+  begin
+    name := 'M' + IntToStr(i);
+    AddStrUnique(newStates, name);
+  end;
+
+  // Novo(s) inicial(is)
+  SetLength(newInitials, 0);
+  for i := 0 to High(Initials) do AddStrUnique(newInitials, MapState(Initials[i]));
+
+  // Novos finais
+  SetLength(newFinals, 0);
+  for i := 0 to High(Finals) do AddStrUnique(newFinals, MapState(Finals[i]));
+
+  // Novas transições
+  SetLength(newTrans, 0);
+  for i := 0 to High(allStates) do
+    for j := 0 to High(alphabetCopy) do if alphabetCopy[j] <> EPS then
+    begin
+      sym := alphabetCopy[j];
+      dst := DetDest(allStates[i], sym);
+      AddTransUnique(newTrans, MapState(allStates[i]), MapState(dst), sym);
+    end;
+
+  // Atribuir
+  States := newStates;
+  Initials := newInitials;
+  Finals := newFinals;
+  Trans := newTrans;
+  WriteLn('AFD minimizado (Hopcroft).');
 end;
 
 // ----------------- Exibição e Menu -----------------
@@ -387,12 +761,16 @@ begin
     WriteLn('1) Converter múltiplos estados iniciais -> AFN-& (novo inicial com & para cada antigo)');
     WriteLn('2) Converter AFN-& para AFN (remover &)');
     WriteLn('3) Mostrar autômato');
+    WriteLn('4) Converter AFN para AFD (subconjuntos)');
+    WriteLn('5) Minimizar AFD (Hopcroft)');
     WriteLn('0) Sair');
     Write('Escolha: '); ReadLn(op);
     case op of
       '1': begin ConvertMultipleInitialsToAFNEps(states, initials, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
       '2': begin RemoveEpsilon(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
       '3': PrintAutomaton(alphabet, states, initials, finals, transicoes);
+      '4': begin NFAToDFA(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '5': begin MinimizeDFAHopcroft(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
       '0': break;
     else
       WriteLn('Opção inválida.');
