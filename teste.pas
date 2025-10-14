@@ -276,6 +276,69 @@ begin
   EpsClosure := res;
 end;
 
+// Aceitação de palavras (AFN com epsilon ou AFD)
+function Accepts(const Alphabet: TStrArray; const Trans: TTransArray; const Initials, Finals: TStrArray; const Word: ansistring): boolean;
+var
+  current, nextSet, tg: TStrArray;
+  i, j: longint;
+  ch: ansistring;
+  s: ansistring;
+begin
+  current := EpsClosure(Trans, Initials);
+  for i := 1 to Length(Word) do
+  begin
+    ch := Word[i];
+    if not ContainsStr(Alphabet, ch) then begin Accepts := false; exit; end;
+    SetLength(nextSet, 0);
+    for j := 0 to High(current) do
+    begin
+      tg := GetTargets(Trans, current[j], ch);
+      nextSet := UnionStr(nextSet, tg);
+    end;
+    current := EpsClosure(Trans, nextSet);
+  end;
+  Accepts := IntersectsStr(current, Finals);
+end;
+
+procedure TestarPalavras(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+var
+  modo, caminho, linha: ansistring;
+  f: Text;
+  ok: boolean;
+begin
+  Write('Testar palavras de (f)ile ou (t)erminal? [f/t]: ');
+  ReadLn(modo);
+  modo := TrimSpaces(modo);
+  if (modo <> 'f') and (modo <> 't') then begin WriteLn('Opção inválida.'); exit; end;
+  if modo = 'f' then
+  begin
+    Write('Caminho do arquivo: '); ReadLn(caminho); caminho := TrimSpaces(caminho);
+    Assign(f, caminho);
+    {$I-} Reset(f); {$I+}
+    if IOResult <> 0 then begin WriteLn('Não foi possível abrir arquivo.'); exit; end;
+    while not Eof(f) do
+    begin
+      ReadLn(f, linha);
+      ok := Accepts(Alphabet, Trans, Initials, Finals, linha);
+      if linha = '' then Write('(vazia)') else Write(linha);
+      WriteLn(' -> ', ok);
+    end;
+    Close(f);
+  end
+  else
+  begin
+    WriteLn('Digite palavras ("sair" para terminar). Linha vazia testa palavra vazia.');
+    while true do
+    begin
+      Write('> '); ReadLn(linha);
+      if TrimSpaces(linha) = 'sair' then break;
+      ok := Accepts(Alphabet, Trans, Initials, Finals, linha);
+      if linha = '' then Write('(vazia)') else Write(linha);
+      WriteLn(' -> ', ok);
+    end;
+  end;
+end;
+
 procedure ConvertMultipleInitialsToAFNEps(var States, Initials: TStrArray; var Trans: TTransArray);
 var i: longint; base, novo: ansistring; idx: longint;
 begin
@@ -760,17 +823,19 @@ begin
     WriteLn; WriteLn('--- MENU ---');
     WriteLn('1) Converter múltiplos estados iniciais -> AFN-& (novo inicial com & para cada antigo)');
     WriteLn('2) Converter AFN-& para AFN (remover &)');
-    WriteLn('3) Mostrar autômato');
-    WriteLn('4) Converter AFN para AFD (subconjuntos)');
-    WriteLn('5) Minimizar AFD (Hopcroft)');
+    WriteLn('3) Converter AFN para AFD (subconjuntos)');
+    WriteLn('4) Minimizar AFD (Hopcroft)');
+    WriteLn('5) Testar palavras (arquivo/terminal)');
+    WriteLn('6) Mostrar autômato');
     WriteLn('0) Sair');
     Write('Escolha: '); ReadLn(op);
     case op of
       '1': begin ConvertMultipleInitialsToAFNEps(states, initials, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
       '2': begin RemoveEpsilon(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
-      '3': PrintAutomaton(alphabet, states, initials, finals, transicoes);
-      '4': begin NFAToDFA(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
-      '5': begin MinimizeDFAHopcroft(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '3': begin NFAToDFA(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '4': begin MinimizeDFAHopcroft(alphabet, states, initials, finals, transicoes); PrintAutomaton(alphabet, states, initials, finals, transicoes); end;
+      '5': TestarPalavras(alphabet, states, initials, finals, transicoes);
+      '6': PrintAutomaton(alphabet, states, initials, finals, transicoes);
       '0': break;
     else
       WriteLn('Opção inválida.');
