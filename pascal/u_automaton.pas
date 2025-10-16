@@ -33,7 +33,7 @@ procedure PrintAutomaton(const Alphabet, States, Initials, Finals: TStrArray; co
 
 implementation
 
-{ ---------- Auxiliares ---------- }
+{ === AUXILIARES === }
 
 function GetTargets(const Trans: TTransArray; const Src, Sym: AnsiString): TStrArray;
 var
@@ -163,7 +163,7 @@ begin
   EpsClosure := resArr;
 end;
 
-{ ---------- Aceitação ---------- }
+{ === ACEITAÇÃO === }
 
 function Accepts(const Alphabet: TStrArray; const Trans: TTransArray; const Initials, Finals: TStrArray; const Word: AnsiString): Boolean;
 var
@@ -200,7 +200,7 @@ begin
   Accepts := ans;
 end;
 
-{ ---------- Operações de transformação ---------- }
+{ === TRANSFORMAÇÕES === }
 
 procedure ConvertMultipleInitialsToAFNEps(var States, Initials: TStrArray; var Trans: TTransArray);
 var
@@ -265,7 +265,7 @@ begin
     end;
   end;
 
-  { construir novas transições (não-EPS) }
+  { construir novas transições (sem &) }
   if Length(States) > 0 then
   begin
     for i := 0 to High(States) do
@@ -400,7 +400,7 @@ var
     end;
   end;
 
-  function KeyToStates(const Key: AnsiString): TStrArray;
+  function KeyToStates(const Key: AnsiString): TStrArray; { Recebe uma chave e retorna o conjunto de estados correspondente }
   var
     s: AnsiString;
     idxc: LongInt;
@@ -913,7 +913,7 @@ begin
   WriteLn('AFD minimizado (Hopcroft).');
 end;
 
-{ ---------- Print / Test ---------- }
+{ === IMPRESSÃO === }
 
 procedure PrintAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
 var
