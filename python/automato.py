@@ -531,7 +531,7 @@ def menu_loop(autom: Automaton, caminho: str=None):
             elif op == '8':
                 caminho_img = input('Nome/ caminho de saída (sem extensão) [automato]: ').strip()
                 if caminho_img == '':
-                    caminho_img = 'automato'
+                    caminho_img = 'output/automato'
                 try:
                     out = visualize_automaton_networkx(autom, out_filename=caminho_img)
                     print(f'Grafo gerado em: {out}')
