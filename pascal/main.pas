@@ -1,7 +1,13 @@
 program teste;
 
 {$mode fpc}{$H+}
-
+{
+ Compilação:
+   fpc main.pas 
+ Execução:
+   ./main [caminho/para/automato.json] [exemplo: /home/joao/LFA-Automato/data/automato.json]
+  
+}
 uses
   u_types, u_utils, u_automaton, u_io;
 
