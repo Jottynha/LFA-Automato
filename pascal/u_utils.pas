@@ -5,26 +5,16 @@ unit u_utils;
 interface
 
 uses
-  u_types;
+  u_types; { Biblioteca local para tipagem }
 
-{ IntToStr em Pascal puro (evita depender de SysUtils) }
-function IntToStrPure(n: LongInt): AnsiString;
-
-{ Trim de espaços (tabs/newline/space) }
-function TrimSpaces(const S: AnsiString): AnsiString;
-
-{ Lê todo o texto de um arquivo (retorna '' se falhar) }
+function IntToStrPure(n: LongInt): AnsiString; { Int -> String }
+function TrimSpaces(const S: AnsiString): AnsiString; { Corte de espaços em branco }
 function ReadAllText(const FileName: AnsiString): AnsiString;
-
-{ Localiza posição do "Key" em JSON-like: procura por "Key" (retorna 0 se não achar) }
-function FindKeyPos(const JSON, Key: AnsiString): LongInt;
-
-{ Encontra índices do bloco [...] a partir de startPos; retorna iStart e iEnd inclusive e ok=true se achou }
+function FindKeyPos(const JSON, Key: AnsiString): LongInt; { Localiza posição do "Key" em JSON (retorna 0 se não achar) }
+{ Encontra índices do bloco a partir de startPos; retorna iStart e iEnd e ok=true se achou }
 procedure ExtractBracketIndices(const JSON: AnsiString; startPos: LongInt; var iStart, iEnd: LongInt; var ok: Boolean);
-
-{ Extrai todas as literais de string dentro de uma seção [ ... ] (assume JSON simples) }
+{ Extrai todas as literais de string dentro de uma seção (assumindo JSON simples) }
 procedure ExtractStringsFromArray(const Section: AnsiString; var outArr: TStrArray);
-
 { Extrai tripletas de strings (src,dst,sym) repetidas e adiciona em outTrans }
 procedure ExtractTransitions(const Section: AnsiString; var outTrans: TTransArray);
 
@@ -42,12 +32,12 @@ begin
     IntToStrPure := '0';
     Exit;
   end;
-  neg := n < 0;
+  neg := n < 0; { sinal negativo }
   if neg then n := -n;
   while n > 0 do
   begin
     d := n mod 10;
-    s := AnsiString(Chr(Ord('0') + d)) + s;
+    s := AnsiString(Chr(Ord('0') + d)) + s; 
     n := n div 10;
   end;
   if neg then s := '-' + s;
@@ -61,8 +51,8 @@ var
 begin
   res := '';
   l := 1; r := Length(S);
-  while (l <= r) and (S[l] in [#9, #10, #13, ' ']) do Inc(l);
-  while (r >= l) and (S[r] in [#9, #10, #13, ' ']) do Dec(r);
+  while (l <= r) and (S[l] in [#9, #10, #13, ' ']) do Inc(l); { Enquanto houver espaço no início, avança }
+  while (r >= l) and (S[r] in [#9, #10, #13, ' ']) do Dec(r); { Enquanto houver espaço no fim, recua }
   if l > r then res := '' else res := Copy(S, l, r - l + 1);
   TrimSpaces := res;
 end;
