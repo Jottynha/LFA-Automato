@@ -566,59 +566,9 @@ Transições:
   S0 --(a)--> S1
   S1 --(b)--> S2
 ```
-
 ---
 
-## 8. Dicas de Debugging
-
-### 8.1 Imprimindo valores intermediários
-
-Adicione `WriteLn` para debug:
-
-```pascal
-// Antes de processar
-WriteLn('Estados atuais: ', Length(current), ' estados');
-for i := 0 to High(current) do
-  WriteLn('  ', current[i]);
-```
-
-### 8.2 Verificando o parse do JSON
-
-```pascal
-// No main.pas, adicione após cada ExtractStringsFromArray:
-WriteLn('Alfabeto lido: ');
-for i := 0 to High(alphabet) do
-  WriteLn('  ', alphabet[i]);
-```
-
-### 8.3 Testando funções isoladamente
-
-Crie um programa de teste:
-
-```pascal
-program teste_epsclosure;
-uses u_types, u_automaton;
-
-var
-  trans: TTransArray;
-  result: TStrArray;
-begin
-  // Criar transições de teste
-  SetLength(trans, 2);
-  trans[0].src := 'q0'; trans[0].dst := 'q1'; trans[0].sym := '&';
-  trans[1].src := 'q1'; trans[1].dst := 'q2'; trans[1].sym := '&';
-  
-  // Testar
-  result := EpsClosure(trans, ['q0']);
-  
-  // Deve retornar: q0, q1, q2
-  WriteLn('Resultado: ', Length(result), ' estados');
-end.
-```
-
----
-
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 ### Problema: "Error: Can't open file 'u_types.pas'"
 
@@ -659,52 +609,3 @@ end;
 
 ---
 
-## 10. Referências e Recursos Adicionais
-
-### 10.1 Livros e Materiais
-
-- **"Introduction to Automata Theory"** - Hopcroft, Motwani, Ullman
-- **Documentação do Free Pascal:** https://www.freepascal.org/docs.html
-
-### 10.2 Ferramentas Úteis
-
-- **JFLAP:** Software para visualizar autômatos
-- **Graphviz:** Para gerar diagramas de autômatos
-
-### 10.3 Comandos Úteis
-
-```bash
-# Compilar com warnings extras
-fpc -vw main.pas
-
-# Compilar com otimização
-fpc -O3 main.pas
-
-# Gerar informações de debug
-fpc -g main.pas
-
-# Limpar arquivos compilados
-rm *.o *.ppu main
-```
-
----
-
-## 11. Contribuindo para o Projeto
-
-### 11.1 Adicionando um novo algoritmo
-
-1. Declare a função em `u_automaton.pas` (seção `interface`)
-2. Implemente na seção `implementation`
-3. Adicione uma opção no menu em `u_io.pas`
-4. Documente o algoritmo neste README
-
-### 11.2 Padrão de Código
-
-- Use nomes descritivos em português
-- Comente algoritmos complexos
-- Teste com diferentes autômatos
-
----
-
-**Última atualização:** Outubro de 2025
-**Versão:** 1.0
