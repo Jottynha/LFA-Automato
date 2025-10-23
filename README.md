@@ -1,710 +1,1477 @@
-## 1. Objetivo
-Este documento tem como objetivo introduzir novos colaboradores ao projeto de autômatos implementado em **Pascal**, explicando desde a **sintaxe básica da linguagem** até o funcionamento detalhado de **cada arquivo e função**. Além disso, será feita uma explicação simples e intuitiva sobre **como funcionam os algoritmos de autômatos** (como fecho-ε, conversão NFA→DFA, minimização, etc.).
+# 📚 Simulador de Autômatos Finitos em Pascal
+
+> Um projeto educacional completo para manipulação e transformação de autômatos finitos, implementado em Free Pascal.
 
 ---
-## 2. Introdução à Linguagem Pascal
 
-### 2.1 Estrutura de um programa
+## 📑 Índice
 
-Em Pascal, um programa é dividido em duas partes principais: a **declaração** e a **implementação**.
+1. [Visão Geral](#-visão-geral)
+2. [Introdução ao Pascal](#-introdução-ao-pascal)
+3. [Arquitetura do Projeto](#-arquitetura-do-projeto)
+4. [Compilação e Execução](#-compilação-e-execução)
+5. [Algoritmos de Autômatos](#-algoritmos-de-autômatos)
+6. [Formato do JSON](#-formato-do-arquivo-json)
+7. [Exemplos Práticos](#-exemplos-práticos)
+8. [Troubleshooting](#-troubleshooting)
+
+---
+
+## 🎯 Visão Geral
+
+Este projeto implementa um **simulador completo de autômatos finitos** que permite:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  📥 ENTRADA                                                  │
+│  • Arquivo JSON com definição do autômato                   │
+└─────────────────────┬───────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────────────┐
+│  ⚙️  TRANSFORMAÇÕES DISPONÍVEIS                              │
+│                                                              │
+│  1️⃣  AFN com múltiplos iniciais → AFN-ε (estado único)      │
+│  2️⃣  AFN-ε → AFN (remoção de épsilon)                        │
+│  3️⃣  AFN → AFD (construção de subconjuntos)                  │
+│  4️⃣  AFD → AFD mínimo (algoritmo de Hopcroft)                │
+│  5️⃣  Simulação: aceita palavra? (Sim/Não)                    │
+└─────────────────────┬───────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────────────┐
+│  📤 SAÍDA                                                    │
+│  • Autômato transformado                                    │
+│  • Resultado de aceitação de palavras                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🗂️ Estrutura de Diretórios
+
+```
+LFA-Automato/
+│
+├── 📂 data/
+│   ├── automato.json         ← Definição do autômato em JSON
+│   └── palavras_aceitas.txt  ← Palavras para teste em lote
+│
+├── 📂 pascal/
+│   ├── main.pas              ← 🚀 Ponto de entrada do programa
+│   ├── u_types.pas           ← 🏗️  Tipos e estruturas de dados
+│   ├── u_utils.pas           ← 🔧 Parser JSON e utilitários
+│   ├── u_automaton.pas       ← 🧠 Algoritmos de autômatos
+│   └── u_io.pas              ← 💬 Interface e menu interativo
+│
+└── README.md                 ← 📖 Você está aqui!
+```
+
+---
+
+## 🔤 Introdução ao Pascal
+
+### Estrutura Básica de um Programa
 
 ```pascal
-program Exemplo;
+program MeuPrograma;        ← Nome do programa
 
-uses crt;
+uses                        ← Importação de bibliotecas
+  SysUtils, Classes;        
 
-var
+var                         ← Declaração de variáveis
   nome: string;
+  idade: integer;
 
-begin
-  write('Digite seu nome: ');
-  readln(nome);
-  writeln('Olá, ', nome, '!');
-end.
+begin                       ← Início do código executável
+  WriteLn('Olá, Mundo!');
+  ReadLn(nome);
+end.                        ← Fim do programa (ponto obrigatório!)
 ```
 
-- `program` indica o início do programa.
-- `uses` importa bibliotecas.
-- `var` declara variáveis.
-- `begin` e `end.` delimitam o corpo do programa.
-- `write` e `writeln` exibem texto.
-- `readln` lê entrada do usuário.
+### Estrutura de uma Unit (Módulo)
 
----
-### 2.2 Estrutura de um _unit_
-Um _unit_ é um módulo reutilizável, semelhante a uma biblioteca. O projeto possui vários.
-
-```pascal
-unit u_exemplo;
-
-interface
-  procedure MostrarMensagem;
-
-implementation
-  procedure MostrarMensagem;
-  begin
-    writeln('Olá do unit!');
-  end;
-end.
+```
+┌─────────────────────────────────────────┐
+│  unit u_exemplo;                        │
+│                                         │
+│  {$mode fpc}{$H+}  ← Diretivas         │
+├─────────────────────────────────────────┤
+│  interface         ← O que é PÚBLICO   │
+│    type                                 │
+│      TMeuTipo = ...                     │
+│    procedure MinhaFunc;                 │
+├─────────────────────────────────────────┤
+│  implementation    ← O que é PRIVADO   │
+│    procedure MinhaFunc;                 │
+│    begin                                │
+│      // código...                       │
+│    end;                                 │
+├─────────────────────────────────────────┤
+│  end.              ← Fim da unit        │
+└─────────────────────────────────────────┘
 ```
 
-- A parte `interface` declara o que será visível para outros arquivos.
-- A parte `implementation` contém o código real.
+### Diretivas de Compilação Importantes
 
----
+| Diretiva       | Função                                              |
+|----------------|-----------------------------------------------------|
+| `{$mode fpc}`  | Ativa modo Free Pascal (recursos modernos)         |
+| `{$H+}`        | Strings longas (AnsiString sem limite de 255 chars)|
+| `{$I+}` / `{$I-}` | Habilita/desabilita verificação de erros I/O   |
 
-### 2.3 Tipos básicos usados no projeto
+**🔑 Por que usar `{$H+}`?**
+```
+┌─────────────────┬──────────────┬─────────────────┐
+│ Sem {$H+}       │ Com {$H+}    │ Vantagem        │
+├─────────────────┼──────────────┼─────────────────┤
+│ ShortString     │ AnsiString   │ Tamanho ilimitado│
+│ Máx 255 chars   │ Dinâmico     │ JSON grandes    │
+│ Memória fixa    │ Gerenciado   │ Auto-expansão   │
+└─────────────────┴──────────────┴─────────────────┘
+```
 
-| Tipo                  | Descrição                                          |
-| --------------------- | -------------------------------------------------- |
-| `AnsiString`          | Cadeia de caracteres (texto).                      |
-| `array of AnsiString` | Vetor dinâmico de textos.                          |
-| `record`              | Estrutura com vários campos (como um struct em C). |
-| `function`            | Retorna um valor.                                  |
-| `procedure`           | Executa uma ação, sem retorno.                     |
-
-Exemplo de `record` usado no projeto:
+### Tipos Usados no Projeto
 
 ```pascal
+// Vetor dinâmico de strings
+TStrArray = array of AnsiString;
+
+// Estrutura para representar uma transição
 TTransition = record
   src: AnsiString;  // Estado de origem
   dst: AnsiString;  // Estado de destino
-  sym: AnsiString;  // Símbolo da transição
+  sym: AnsiString;  // Símbolo
 end;
+
+// Vetor de transições
+TTransArray = array of TTransition;
+```
+
+**Exemplo Visual de TTransition:**
+```
+┌─────────────────────────────────┐
+│  TTransition                    │
+├─────────────────────────────────┤
+│  src: "q0"    ← De onde sai     │
+│  dst: "q1"    ← Para onde vai   │
+│  sym: "a"     ← Com qual símbolo│
+└─────────────────────────────────┘
+         Representa: q0 --a--> q1
 ```
 
 ---
 
-### 2.4 Diretivas de Compilação
+## 🏗️ Arquitetura do Projeto
 
-O projeto usa algumas diretivas importantes para configurar o compilador:
+### Mapa de Dependências
 
-```pascal
-{$mode fpc}   // Ativa o modo Free Pascal (recursos modernos)
-{$H+}         // Ativa strings longas (AnsiString ilimitadas)
+```
+                    ┌──────────────┐
+                    │   main.pas   │ ← Programa principal
+                    └───────┬──────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ↓                   ↓                   ↓
+   ┌─────────┐         ┌─────────┐        ┌──────────┐
+   │u_types  │←────────│u_utils  │        │  u_io    │
+   │(Tipos)  │         │(Parser) │        │ (Menu)   │
+   └─────────┘         └─────────┘        └────┬─────┘
+        ↑                   ↑                   ↓
+        └───────────────────┴──────────┬────────┘
+                                       ↓
+                              ┌─────────────────┐
+                              │  u_automaton    │
+                              │  (Algoritmos)   │
+                              └─────────────────┘
 ```
 
-| Diretiva | Significado |
-|----------|-------------|
-| `{$mode fpc}` | Modo de compatibilidade com Free Pascal, habilita recursos modernos |
-| `{$H+}` | Strings são do tipo AnsiString (sem limite de 255 caracteres) |
-| `{$H-}` | Strings são do tipo ShortString (máximo 255 caracteres) |
-| `{$I+}` | Habilita verificação de erros de I/O |
-| `{$I-}` | Desabilita verificação de erros de I/O |
+### Fluxo de Execução Completo
 
-**Por que usar `{$H+}`?**
-- Permite trabalhar com strings grandes (arquivos JSON, etc.)
-- Compatível com bibliotecas modernas
-- Gerenciamento automático de memória
+```
+╔══════════════════════════════════════════════════════════════╗
+║  FASE 1: INICIALIZAÇÃO                                       ║
+╚══════════════════════════════════════════════════════════════╝
+    │
+    ├─→ [1] Verifica argumentos da linha de comando
+    │        if ParamCount >= 1 then path := ParamStr(1)
+    │
+    ├─→ [2] Lê arquivo JSON completo
+    │        json := ReadAllText(path)
+    │
+    └─→ [3] Valida se arquivo foi lido
+             if json = '' then Halt(1)
+
+╔══════════════════════════════════════════════════════════════╗
+║  FASE 2: PARSING DO JSON                                     ║
+╚══════════════════════════════════════════════════════════════╝
+    │
+    ├─→ [4] Extrai ALFABETO
+    │        FindKeyPos → ExtractBracketIndices → ExtractStrings
+    │        Resultado: ["a", "b", "c"]
+    │
+    ├─→ [5] Extrai ESTADOS
+    │        Resultado: ["q0", "q1", "q2"]
+    │
+    ├─→ [6] Extrai ESTADOS INICIAIS
+    │        Resultado: ["q0"]
+    │
+    ├─→ [7] Extrai ESTADOS FINAIS
+    │        Resultado: ["q2"]
+    │
+    └─→ [8] Extrai TRANSIÇÕES
+             Resultado: [(q0,q1,a), (q1,q2,b), ...]
+
+╔══════════════════════════════════════════════════════════════╗
+║  FASE 3: LOOP INTERATIVO                                     ║
+╚══════════════════════════════════════════════════════════════╝
+    │
+    └─→ [9] ShowMenu() ─┐
+                        │
+         ┌──────────────┴──────────────┐
+         │  MENU INTERATIVO             │
+         │  ┌────────────────────────┐  │
+         │  │ 1. Converter iniciais  │  │
+         │  │ 2. Remover épsilon     │  │
+         │  │ 3. AFN → AFD           │  │
+         │  │ 4. Minimizar AFD       │  │
+         │  │ 5. Testar palavras     │  │
+         │  │ 6. Mostrar autômato    │  │
+         │  │ 0. Sair                │  │
+         │  └────────────────────────┘  │
+         └─────────────┬────────────────┘
+                       │
+                       └─→ Loop até escolher "0"
+```
+
+### Detalhamento dos Módulos
+
+#### 📦 `u_types.pas` - Fundações
+
+```
+┌─────────────────────────────────────────────────────┐
+│  TIPOS BÁSICOS                                      │
+├─────────────────────────────────────────────────────┤
+│  TStrArray        = array of AnsiString             │
+│  TTransArray      = array of TTransition            │
+│                                                     │
+│  TTransition = record                               │
+│    src, dst, sym: AnsiString                        │
+│  end;                                               │
+├─────────────────────────────────────────────────────┤
+│  FUNÇÕES AUXILIARES                                 │
+├─────────────────────────────────────────────────────┤
+│  • MakeArray1(S)     → Cria array [S]               │
+│  • IndexOfStr(A, S)  → Busca S em A (-1 se ausente) │
+└─────────────────────────────────────────────────────┘
+```
+
+#### 🔧 `u_utils.pas` - Parser JSON Manual
+
+```
+PIPELINE DE PARSING:
+═══════════════════
+
+  📄 Arquivo JSON
+      │
+      ↓ ReadAllText()
+  📝 String completa em memória
+      │
+      ↓ FindKeyPos("alfabeto")
+  📍 Posição da chave no texto
+      │
+      ↓ ExtractBracketIndices()
+  🔢 Índices [início, fim] do array
+      │
+      ↓ ExtractStringsFromArray()
+  📊 TStrArray populado
+```
+
+**Exemplo de Parsing:**
+```json
+{
+  "alfabeto": ["a", "b", "c"]
+}
+```
+↓ **FindKeyPos** localiza `"alfabeto"` na posição 5
+↓ **ExtractBracketIndices** encontra `[` na pos 18, `]` na pos 32
+↓ **ExtractStringsFromArray** extrai: `"a"`, `"b"`, `"c"`
+↓ **Resultado:** `TStrArray = ['a', 'b', 'c']`
+
+#### 🧠 `u_automaton.pas` - Motor de Transformações
+
+```
+╔════════════════════════════════════════════════════╗
+║  OPERAÇÕES DE CONJUNTO                             ║
+╠════════════════════════════════════════════════════╣
+║  GetTargets(Trans, src, sym) → Retorna destinos    ║
+║  UnionStr(A, B)              → A ∪ B               ║
+║  IntersectsStr(A, B)         → A ∩ B ≠ ∅?          ║
+║  KeyFromSet([q0,q1])         → "{q0,q1}"           ║
+║  EpsClosure(Trans, [q0])     → Fecho-ε             ║
+╠════════════════════════════════════════════════════╣
+║  ALGORITMOS PRINCIPAIS                             ║
+╠════════════════════════════════════════════════════╣
+║  ✓ Accepts()                    ← Simulação        ║
+║  ✓ ConvertMultipleInitials()    ← AFN → AFN-ε      ║
+║  ✓ RemoveEpsilon()              ← AFN-ε → AFN      ║
+║  ✓ NFAToDFA()                   ← AFN → AFD        ║
+║  ✓ MinimizeDFAHopcroft()        ← AFD → AFD min    ║
+╚════════════════════════════════════════════════════╝
+```
+
+#### 💬 `u_io.pas` - Interface do Usuário
+
+```
+┌─────────────────────────────────────────┐
+│  MENU PRINCIPAL                         │
+│  ┌───────────────────────────────────┐  │
+│  │ while True do                     │  │
+│  │   Exibir opções                   │  │
+│  │   Ler escolha                     │  │
+│  │   case escolha of                 │  │
+│  │     '1': Converter iniciais       │  │
+│  │     '2': Remover epsilon          │  │
+│  │     '3': AFN → AFD                │  │
+│  │     '4': Minimizar                │  │
+│  │     '5': Testar palavras          │  │
+│  │     '6': Imprimir autômato        │  │
+│  │     '0': Exit                     │  │
+│  │   end;                            │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
 
 ---
 
-## 3. Estrutura do Projeto
+## ⚙️ Compilação e Execução
 
-O projeto é composto pelos seguintes arquivos:
-
-| Arquivo           | Função principal                                    |
-| ----------------- | --------------------------------------------------- |
-| `u_types.pas`     | Define tipos, estruturas e funções auxiliares.      |
-| `u_utils.pas`     | Faz a leitura e interpretação do arquivo JSON.      |
-| `u_automaton.pas` | Implementa os algoritmos de autômatos.              |
-| `u_io.pas`        | Responsável pela interface de entrada/saída e menu. |
-| `main.pas`        | Arquivo principal que executa o programa.           |
-
-### 3.1 Fluxo de Execução
-
-```
-┌─────────────┐
-│  main.pas   │ ◄─── Ponto de entrada
-└──────┬──────┘
-       │
-       ├──► ReadAllText (u_utils)        ◄─── Lê o JSON
-       │
-       ├──► ExtractStringsFromArray      ◄─── Parse do JSON
-       │
-       ├──► ShowMenu (u_io)              ◄─── Menu interativo
-       │
-       └──► Algoritmos (u_automaton)     ◄─── Transformações
-            │
-            ├─► EpsClosure
-            ├─► RemoveEpsilon
-            ├─► NFAToDFA
-            ├─► MinimizeDFAHopcroft
-            └─► Accepts
-```
-
-Para compilar, use:
+### Pré-requisitos
 
 ```bash
-cd pascal
+# Verificar instalação do Free Pascal
+fpc -version
+
+# Saída esperada:
+# Free Pascal Compiler version 3.x.x
+```
+
+### Compilação
+
+```bash
+# Navegar para o diretório do código
+cd pascal/
+
+# Compilar (gera executável 'main')
 fpc main.pas
+
+# Compilação bem-sucedida mostra:
+# Linking main
+# 123 lines compiled, 0.2 sec
 ```
 
-Para executar:
+### Execução
 
 ```bash
+# Opção 1: Caminho padrão (data/automato.json)
 ./main ../data/automato.json
+
+# Opção 2: Caminho customizado
+./main /caminho/completo/para/automato.json
+
+# Opção 3: Usar caminho relativo
+./main ../../meus_automatos/teste.json
 ```
 
+**Fluxo após Execução:**
+```
+$ ./main ../data/automato.json
+
+📖 Carregando autômato de: ../data/automato.json
+✓ Alfabeto lido: 2 símbolos
+✓ Estados lidos: 3 estados
+✓ Transições lidas: 5 transições
+
+╔════════════════════════════════╗
+║      MENU PRINCIPAL            ║
+╠════════════════════════════════╣
+║  1. Converter iniciais         ║
+║  2. Remover épsilon            ║
+║  3. AFN → AFD                  ║
+║  4. Minimizar AFD              ║
+║  5. Testar palavras            ║
+║  6. Mostrar autômato           ║
+║  0. Sair                       ║
+╚════════════════════════════════╝
 ---
 
-## 4. Descrição dos Arquivos
+## 🧮 Algoritmos de Autômatos
 
-### 4.1 `u_types.pas`
+### 1️⃣ Fecho-Épsilon (Epsilon Closure)
 
-Define estruturas básicas:
-- `TStrArray`: vetor de strings.
-- `TTransition`: representa uma transição do autômato.
-- Funções auxiliares como `SetAdd`, `SetUnion`, `IndexOfStr`, usadas para manipular conjuntos e listas.
+**Objetivo:** Encontrar todos os estados alcançáveis usando apenas transições ε.
 
-**Exemplo de uso:**
+#### Visualização do Processo
+
+```
+EXEMPLO DE AUTÔMATO:
+                    ε           ε
+        q0 ──────────→ q1 ──────────→ q2
+         │
+         │ ε
+         ↓
+        q3
+
+
+PASSO A PASSO - EpsClosure({q0}):
+
+┌─────────────────────────────────────────────────┐
+│ INICIALIZAÇÃO                                   │
+├─────────────────────────────────────────────────┤
+│ Resultado = {q0}                                │
+│ Pilha     = [q0]                                │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│ ITERAÇÃO 1                                      │
+├─────────────────────────────────────────────────┤
+│ Desempilha: q0                                  │
+│ Transições ε de q0: {q1, q3}                    │
+│ Adiciona q1 e q3 ao resultado e à pilha         │
+│                                                 │
+│ Resultado = {q0, q1, q3}                        │
+│ Pilha     = [q1, q3]                            │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│ ITERAÇÃO 2                                      │
+├─────────────────────────────────────────────────┤
+│ Desempilha: q3                                  │
+│ Transições ε de q3: ∅ (nenhuma)                 │
+│                                                 │
+│ Resultado = {q0, q1, q3}                        │
+│ Pilha     = [q1]                                │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│ ITERAÇÃO 3                                      │
+├─────────────────────────────────────────────────┤
+│ Desempilha: q1                                  │
+│ Transições ε de q1: {q2}                        │
+│ Adiciona q2 ao resultado e à pilha              │
+│                                                 │
+│ Resultado = {q0, q1, q2, q3}                    │
+│ Pilha     = [q2]                                │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│ ITERAÇÃO 4                                      │
+├─────────────────────────────────────────────────┤
+│ Desempilha: q2                                  │
+│ Transições ε de q2: ∅                           │
+│                                                 │
+│ Resultado = {q0, q1, q2, q3}                    │
+│ Pilha     = []  ← VAZIA!                        │
+└─────────────────────────────────────────────────┘
+
+✓ RESULTADO FINAL: EpsClosure({q0}) = {q0, q1, q2, q3}
+```
+
+#### Pseudocódigo
+
 ```pascal
-var
-  estados: TStrArray;
-  trans: TTransition;
-begin
-  SetLength(estados, 3);
-  estados[0] := 'q0';
-  estados[1] := 'q1';
-  estados[2] := 'q2';
+function EpsClosure(Trans, StartStates):
+  resultado ← StartStates
+  pilha ← StartStates
   
-  trans.src := 'q0';
-  trans.dst := 'q1';
-  trans.sym := 'a';
-end;
-```
-
-### 4.2 `u_utils.pas`
-
-Responsável pela leitura e interpretação do JSON que descreve o autômato:
-- `ReadAllText`: lê o conteúdo de um arquivo.
-- `FindKeyPos`: encontra a posição de uma chave no JSON.
-- `ExtractStringsFromArray`: transforma um trecho do JSON em vetor de strings.
-- `ExtractTransitions`: transforma a lista de transições do JSON em estruturas internas.
-
-**Fluxo do Parser JSON:**
-```
-Arquivo JSON
-    ↓
-ReadAllText → String completa
-    ↓
-FindKeyPos → Localiza "alfabeto", "estados", etc.
-    ↓
-ExtractBracketIndices → Extrai conteúdo entre [ ]
-    ↓
-ExtractStringsFromArray → Converte para TStrArray
-```
-
-### 4.3 `u_automaton.pas`
-
-Contém todos os **algoritmos principais**:
-- `EpsClosure`: calcula o fecho-ε.
-- `RemoveEpsilon`: remove transições ε (épsilon).
-- `NFAToDFA`: converte autômato não-determinístico (AFN) em determinístico (AFD).
-- `MinimizeDFAHopcroft`: minimiza o AFD com o algoritmo de Hopcroft.
-- `Accepts`: verifica se uma palavra é aceita pelo autômato.
-
-**Exemplo de Chamada:**
-```pascal
-var
-  closure: TStrArray;
-begin
-  // Calcular fecho-ε do estado 'q0'
-  closure := EpsClosure(transicoes, ['q0']);
+  while pilha não vazia do:
+    estado ← pop(pilha)
+    
+    para cada transição (estado --ε--> destino):
+      se destino ∉ resultado:
+        adicionar destino a resultado
+        push(pilha, destino)
   
-  // closure agora contém todos os estados alcançáveis por ε
-  // Exemplo: ['q0', 'q1', 'q3']
-end;
-```
-
-### 4.4 `u_io.pas`
-
-Apresenta um menu interativo com opções para o usuário:
-1. Converter múltiplos iniciais em AFN-ε
-2. Remover épsilon
-3. Converter AFN→AFD
-4. Minimizar AFD
-5. Testar palavras
-6. Imprimir autômato
-7. Sair
-
-**Interface do Menu:**
-```
-========================================
-          SIMULADOR DE AUTOMATO
-========================================
-1. Converter múltiplos iniciais em AFN-ε
-2. Remover épsilon (AFN-ε → AFN)
-3. Converter AFN → AFD
-4. Minimizar AFD
-5. Testar palavras
-6. Imprimir autômato
-0. Sair
-========================================
-Escolha: _
-```
-
-### 4.5 `main.pas`
-
-É o ponto de entrada do programa:
-- Lê o caminho do JSON.
-- Chama funções de `u_utils` para ler o autômato.
-- Chama o menu em `u_io` para o usuário interagir.
-
-**Fluxo de Execução:**
-```pascal
-begin
-  // 1. Verifica argumentos da linha de comando
-  if ParamCount >= 1 then 
-    path := ParamStr(1)  // Usa caminho fornecido
-  else 
-    path := 'data/automato.json';  // Caminho padrão
-  
-  // 2. Lê o arquivo JSON
-  json := ReadAllText(path);
-  
-  // 3. Faz o parse de cada seção
-  ExtractStringsFromArray(section, alphabet);
-  ExtractStringsFromArray(section, states);
-  ExtractTransitions(section, transicoes);
-  
-  // 4. Inicia o menu interativo
-  ShowMenu(alphabet, states, initials, finals, transicoes);
-end.
+  return resultado
 ```
 
 ---
 
-## 5. Como Funcionam os Algoritmos de Autômato
+### 2️⃣ Remoção de Épsilon
 
-### 5.1 Fecho-ε (Epsilon Closure)
-**Função:** encontrar todos os estados alcançáveis a partir de um estado inicial apenas por transições ε.
+**Objetivo:** Converter AFN-ε em AFN sem transições épsilon.
 
-**Pseudocódigo:**
+#### Visualização Completa
+
 ```
-função EpsClosure(estados_iniciais):
-    resultado ← estados_iniciais
-    pilha ← estados_iniciais
-    
-    enquanto pilha não vazia:
-        estado ← desempilhar()
-        para cada transição ε de estado:
-            se destino não está em resultado:
-                adicionar destino a resultado
-                empilhar destino
-    
-    retornar resultado
-```
+╔══════════════════════════════════════════════════════╗
+║  AUTÔMATO ORIGINAL (AFN-ε)                           ║
+╚══════════════════════════════════════════════════════╝
 
-**Exemplo Visual:**
-```
-Autômato:
-q0 --ε--> q1 --ε--> q2
- |
- ε
- ↓
-q3
+         ε           a           b
+    q0 ────→ q1 ───────→ q2 ───────→ q3 (final)
+                                       ↑
+                                       │ ε
+                                       │
+                                      q4
 
-EpsClosure([q0]) = {q0, q1, q2, q3}
-```
+Estados: {q0, q1, q2, q3, q4}
+Iniciais: {q0}
+Finais: {q3}
 
-**Implementação em Pascal:**
-```pascal
-function EpsClosure(const Trans: TTransArray; 
-                    const Start: TStrArray): TStrArray;
-var
-  result, stack: TStrArray;
-  current: AnsiString;
-  targets: TStrArray;
-begin
-  result := Start;
-  stack := Start;
-  
-  while Length(stack) > 0 do
-  begin
-    current := stack[High(stack)];
-    SetLength(stack, Length(stack)-1);  // Pop
-    
-    targets := GetTargets(Trans, current, '&');  // '&' = epsilon
-    for i := 0 to High(targets) do
-      if not ContainsStr(result, targets[i]) then
-      begin
-        AddStr(result, targets[i]);
-        AddStr(stack, targets[i]);
-      end;
-  end;
-  
-  EpsClosure := result;
-end;
-```
 
----
-### 5.2 Conversão de AFN para AFD (Construção de Subconjunto)
+╔══════════════════════════════════════════════════════╗
+║  PASSO 1: CALCULAR FECHOS-ε                          ║
+╚══════════════════════════════════════════════════════╝
 
-**Ideia:** cada estado do DFA representa um conjunto de estados do NFA.
+EpsClosure(q0) = {q0, q1}     ← q0 alcança q1 por ε
+EpsClosure(q1) = {q1}
+EpsClosure(q2) = {q2}
+EpsClosure(q3) = {q3}
+EpsClosure(q4) = {q3, q4}     ← q4 alcança q3 por ε
 
-**Pseudocódigo:**
-```
-função NFAToDFA(afn):
-    inicial_dfa ← EpsClosure(inicial_afn)
-    fila ← [inicial_dfa]
-    visitados ← conjunto vazio
-    
-    enquanto fila não vazia:
-        conjunto_atual ← desenfileirar()
-        marcar como visitado
-        
-        para cada símbolo do alfabeto:
-            próximo ← conjunto vazio
-            
-            para cada estado em conjunto_atual:
-                destinos ← transições(estado, símbolo)
-                próximo ← próximo ∪ EpsClosure(destinos)
-            
-            se próximo não foi visitado:
-                enfileirar próximo
-                criar transição: conjunto_atual --símbolo--> próximo
-    
-    retornar dfa
-```
 
-**Exemplo Visual:**
-```
-AFN:
-     a       b
-q0 ----→ q1 ----→ q2
- |       |
- ε       ε
- ↓       ↓
-q3      q4
+╔══════════════════════════════════════════════════════╗
+║  PASSO 2: NOVOS ESTADOS FINAIS                       ║
+╚══════════════════════════════════════════════════════╝
 
-Conversão para AFD:
-Estados do DFA são conjuntos:
-S0 = {q0, q3}  (inicial com fecho-ε)
-S1 = {q1, q4}  (após ler 'a' de S0)
-S2 = {q2}      (após ler 'b' de S1)
+Para cada estado p:
+  Se EpsClosure(p) ∩ Finais ≠ ∅, então p é final
 
-DFA resultante:
-     a       b
-S0 ----→ S1 ----→ S2
-```
+q0: {q0,q1} ∩ {q3} = ∅        → NÃO final
+q1: {q1} ∩ {q3} = ∅           → NÃO final
+q2: {q2} ∩ {q3} = ∅           → NÃO final
+q3: {q3} ∩ {q3} = {q3}        → FINAL ✓
+q4: {q3,q4} ∩ {q3} = {q3}     → FINAL ✓
 
----
-### 5.3 Remoção de Épsilon
-**Função:** eliminar todas as transições ε mantendo o mesmo comportamento.
+Novos Finais = {q3, q4}
 
-**Algoritmo:**
-1. Para cada estado `q`, calcule seu fecho-ε
-2. Para cada símbolo `a` (exceto ε):
-   - Para cada estado `p` no fecho-ε de `q`:
-     - Se existe transição `p --a--> r`:
-       - Adicione transição `q --a--> r` (direta)
-3. Remova todas as transições ε
 
-**Exemplo:**
-```
-Antes:
-q0 --ε--> q1 --a--> q2
+╔══════════════════════════════════════════════════════╗
+║  PASSO 3: NOVAS TRANSIÇÕES (SEM ε)                   ║
+╚══════════════════════════════════════════════════════╝
 
-Fecho-ε(q0) = {q0, q1}
+Para cada estado p e símbolo a:
+  Para cada q em EpsClosure(p):
+    Se existe q --a--> r:
+      Para cada s em EpsClosure(r):
+        Adicionar: p --a--> s
 
-Depois (ε removido):
-q0 --a--> q2  (transição direta adicionada)
-```
+De q0 com 'a':
+  EpsClosure(q0) = {q0, q1}
+  q1 --a--> q2
+  EpsClosure(q2) = {q2}
+  ✓ Adiciona: q0 --a--> q2
 
----
-### 5.4 Minimização (Hopcroft)
+De q0 com 'b':
+  Nenhuma transição 'b' de {q0, q1}
+  (nada a adicionar)
 
-**Função:** reduzir o DFA, removendo estados redundantes.
+De q2 com 'b':
+  q2 --b--> q3
+  EpsClosure(q3) = {q3}
+  ✓ Adiciona: q2 --b--> q3
 
-**Ideia:** agrupar estados equivalentes (que se comportam igual para todas as entradas).
 
-**Algoritmo:**
-```
-1. Partição inicial: P = {Finais, Não-Finais}
-2. W = P (fila de trabalho)
+╔══════════════════════════════════════════════════════╗
+║  AUTÔMATO RESULTANTE (AFN sem ε)                     ║
+╚══════════════════════════════════════════════════════╝
 
-3. Enquanto W não vazio:
-     Remover conjunto C de W
-     
-     Para cada símbolo a:
-       X = estados que vão para C com 'a'
-       
-       Para cada conjunto B em P:
-         Se X divide B:
-           Dividir B em (B ∩ X) e (B - X)
-           Substituir B pelas duas partes
-           Atualizar W
+         a           b
+    q0 ────→ q2 ───────→ q3 (final)
 
-4. Cada conjunto final em P vira um estado do DFA minimizado
-```
-
-**Exemplo Visual:**
-```
-DFA original:
-q0 --a--> q1 --b--> q3 (final)
- |         |
- b         a
- ↓         ↓
-q2 --a--> q4 --b--> q3 (final)
-
-Estados q1 e q4 são equivalentes (ambos vão para q3 com 'b')
-
-DFA minimizado:
-q0 --a--> q1' --b--> q3 (final)
- |
- b
- ↓
-q2 --a--> q1' (mesmo estado!)
-```
-
----
-### 5.5 Simulação de Palavra
-
-Para testar se uma palavra é aceita:
-
-**Algoritmo:**
-```
-função Accepts(automato, palavra):
-    estados_atuais ← EpsClosure(inicial)
-    
-    para cada símbolo em palavra:
-        próximos ← conjunto vazio
-        
-        para cada estado em estados_atuais:
-            destinos ← transições(estado, símbolo)
-            próximos ← próximos ∪ destinos
-        
-        estados_atuais ← EpsClosure(próximos)
-    
-    retornar (estados_atuais ∩ finais) ≠ vazio
-```
-
-**Exemplo de Simulação:**
-```
-Autômato: q0 --a--> q1 --b--> q2 (final)
-Palavra: "ab"
-
-Passo 1: Estados atuais = {q0}
-Lê 'a' → {q1}
-
-Passo 2: Estados atuais = {q1}
-Lê 'b' → {q2}
-
-Passo 3: q2 é final? SIM → Palavra aceita! ✓
+Estados: {q0, q1, q2, q3, q4}
+Iniciais: {q0}
+Finais: {q3, q4}
+Transições: {(q0,q2,a), (q2,q3,b)}
 ```
 
 ---
 
-## 6. Exemplo de Arquivo JSON
+### 3️⃣ Conversão AFN → AFD (Construção de Subconjuntos)
+
+**Objetivo:** Transformar autômato não-determinístico em determinístico.
+
+#### Visualização Passo a Passo
+
+```
+╔══════════════════════════════════════════════════════╗
+║  AFN ORIGINAL                                        ║
+╚══════════════════════════════════════════════════════╝
+
+         a         b
+    q0 ───→ q1 ───→ q2 (final)
+     │       │
+     │ ε     │ ε
+     ↓       ↓
+    q3      q4
+
+Alfabeto: {a, b}
+Iniciais: {q0}
+Finais: {q2}
+
+
+╔══════════════════════════════════════════════════════╗
+║  CONSTRUÇÃO DO AFD                                   ║
+╚══════════════════════════════════════════════════════╝
+
+INICIALIZAÇÃO:
+━━━━━━━━━━━━━━
+Estado inicial DFA = EpsClosure({q0}) = {q0, q3}
+Nomeia como: S0
+Fila = [S0]
+
+
+ITERAÇÃO 1: Processar S0 = {q0, q3}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────┐
+│ Para símbolo 'a':                   │
+├─────────────────────────────────────┤
+│ De q0: GetTargets(q0, a) = {q1}     │
+│ De q3: GetTargets(q3, a) = ∅        │
+│                                     │
+│ União: {q1}                         │
+│ EpsClosure({q1}) = {q1, q4}         │
+│                                     │
+│ Novo estado: S1 = {q1, q4}          │
+│ Transição: S0 --a--> S1             │
+│                                     │
+│ Adiciona S1 à fila                  │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│ Para símbolo 'b':                   │
+├─────────────────────────────────────┤
+│ De q0: GetTargets(q0, b) = ∅        │
+│ De q3: GetTargets(q3, b) = ∅        │
+│                                     │
+│ União: ∅                            │
+│ (nenhuma transição)                 │
+└─────────────────────────────────────┘
+
+Estado da fila: [S1]
+
+
+ITERAÇÃO 2: Processar S1 = {q1, q4}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────┐
+│ Para símbolo 'a':                   │
+├─────────────────────────────────────┤
+│ De q1: GetTargets(q1, a) = ∅        │
+│ De q4: GetTargets(q4, a) = ∅        │
+│                                     │
+│ (nenhuma transição)                 │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│ Para símbolo 'b':                   │
+├─────────────────────────────────────┤
+│ De q1: GetTargets(q1, b) = {q2}     │
+│ De q4: GetTargets(q4, b) = ∅        │
+│                                     │
+│ União: {q2}                         │
+│ EpsClosure({q2}) = {q2}             │
+│                                     │
+│ Novo estado: S2 = {q2}              │
+│ Transição: S1 --b--> S2             │
+│                                     │
+│ Adiciona S2 à fila                  │
+└─────────────────────────────────────┘
+
+Estado da fila: [S2]
+
+
+ITERAÇÃO 3: Processar S2 = {q2}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+S2 contém q2, que é final no AFN
+Logo, S2 é final no AFD ✓
+
+┌─────────────────────────────────────┐
+│ Para símbolo 'a':                   │
+│ GetTargets(q2, a) = ∅               │
+│                                     │
+│ Para símbolo 'b':                   │
+│ GetTargets(q2, b) = ∅               │
+└─────────────────────────────────────┘
+
+Fila vazia → FIM
+
+
+╔══════════════════════════════════════════════════════╗
+║  AFD RESULTANTE                                      ║
+╚══════════════════════════════════════════════════════╝
+
+         a         b
+    S0 ───→ S1 ───→ S2 (final)
+
+Estados DFA:
+  S0 = {q0, q3}  (inicial)
+  S1 = {q1, q4}
+  S2 = {q2}      (final)
+
+Transições:
+  S0 --a--> S1
+  S1 --b--> S2
+
+✓ Autômato totalmente determinístico!
+```
+
+---
+
+### 4️⃣ Minimização de AFD (Hopcroft)
+
+**Objetivo:** Reduzir AFD ao menor número de estados equivalentes.
+
+#### Visualização do Processo
+
+```
+╔══════════════════════════════════════════════════════╗
+║  AFD ORIGINAL                                        ║
+╚══════════════════════════════════════════════════════╝
+
+    q0 --a--> q1 --b--> q5 (final)
+     │         │
+     │ b       │ a
+     ↓         ↓
+    q2 --a--> q3 --b--> q5 (final)
+     │         │
+     │ b       │ a
+     ↓         ↓
+    q4 --a--> q4 --b--> q4
+
+Estados: {q0, q1, q2, q3, q4, q5}
+Finais: {q5}
+
+
+╔══════════════════════════════════════════════════════╗
+║  ETAPA 1: COMPLETAR AFD (adicionar DEAD)             ║
+╚══════════════════════════════════════════════════════╝
+
+Transições faltantes:
+  q5 --a--> ? (indefinida)
+  q5 --b--> ? (indefinida)
+
+Cria estado DEAD:
+  q5 --a--> DEAD
+  q5 --b--> DEAD
+  DEAD --a--> DEAD
+  DEAD --b--> DEAD
+
+
+╔══════════════════════════════════════════════════════╗
+║  ETAPA 2: PARTIÇÃO INICIAL                           ║
+╚══════════════════════════════════════════════════════╝
+
+P = [ {q5}, {q0, q1, q2, q3, q4, DEAD} ]
+      └─┬─┘  └──────────┬──────────────┘
+      Finais        Não-Finais
+
+W = [ {q5}, {q0, q1, q2, q3, q4, DEAD} ]
+
+
+╔══════════════════════════════════════════════════════╗
+║  ETAPA 3: REFINAMENTO                                ║
+╚══════════════════════════════════════════════════════╝
+
+ITERAÇÃO 1: Processar C = {q5}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para símbolo 'a':
+  X = {estados que vão para q5 com 'a'} = ∅
+
+Para símbolo 'b':
+  X = {estados que vão para q5 com 'b'}
+  = {q1, q3}  (verificar tabela de transições)
+
+Dividir bloco {q0,q1,q2,q3,q4,DEAD}:
+  Interseção: {q1, q3}
+  Diferença:  {q0, q2, q4, DEAD}
+
+Nova partição:
+P = [ {q5}, {q1, q3}, {q0, q2, q4, DEAD} ]
+
+
+ITERAÇÃO 2: Processar C = {q1, q3}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para símbolo 'a':
+  q1 --a--> q1 (em bloco 1)
+  q3 --a--> q3 (em bloco 1)
+  (mesmo comportamento)
+
+Para símbolo 'b':
+  q1 --b--> q5 (em bloco 0)
+  q3 --b--> q5 (em bloco 0)
+  (mesmo comportamento)
+
+Não divide!
+
+
+ITERAÇÃO 3: Processar C = {q0, q2, q4, DEAD}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Para símbolo 'a':
+  q0 --a--> q1 (bloco 1)
+  q2 --a--> q3 (bloco 1)
+  q4 --a--> q4 (bloco 2)
+  DEAD --a--> DEAD (bloco 2)
+
+Divide em:
+  {q0, q2}       (vão para bloco 1)
+  {q4, DEAD}     (vão para bloco 2)
+
+Partição final:
+P = [ {q5}, {q1,q3}, {q0,q2}, {q4,DEAD} ]
+
+
+╔══════════════════════════════════════════════════════╗
+║  AFD MINIMIZADO                                      ║
+╚══════════════════════════════════════════════════════╝
+
+Estados minimizados:
+  M0 = {q5}           (final)
+  M1 = {q1, q3}
+  M2 = {q0, q2}       (inicial)
+  M3 = {q4, DEAD}
+
+Transições:
+  M2 --a--> M1
+  M2 --b--> M3
+  M1 --a--> M1
+  M1 --b--> M0
+  M3 --a--> M3
+  M3 --b--> M3
+  M0 --a--> M3
+  M0 --b--> M3
+
+Redução: 7 estados → 4 estados (-43%)
+```
+
+---
+
+### 5️⃣ Simulação de Aceitação de Palavra
+
+**Objetivo:** Verificar se uma palavra é aceita pelo autômato.
+
+#### Exemplo Detalhado
+
+```
+╔══════════════════════════════════════════════════════╗
+║  AUTÔMATO                                            ║
+╚══════════════════════════════════════════════════════╝
+
+         a         b
+    q0 ───→ q1 ───→ q2 (final)
+     │
+     │ ε
+     ↓
+    q3 ───→ q4
+         a
+
+Palavra de entrada: "ab"
+
+
+╔══════════════════════════════════════════════════════╗
+║  SIMULAÇÃO PASSO A PASSO                             ║
+╚══════════════════════════════════════════════════════╝
+
+INICIALIZAÇÃO
+━━━━━━━━━━━━━
+Estados atuais = EpsClosure({q0})
+               = {q0, q3}
+
+┌────────────────────────────────┐
+│  Posição na palavra: [⁰]ab    │
+│  Estados atuais: {q0, q3}     │
+└────────────────────────────────┘
+
+
+LEITURA DO SÍMBOLO 'a' (posição 0)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+De q0 com 'a': GetTargets(q0, 'a') = {q1}
+De q3 com 'a': GetTargets(q3, 'a') = {q4}
+
+nextSet = {q1, q4}
+Estados atuais = EpsClosure({q1, q4})
+               = {q1, q4}
+
+┌────────────────────────────────┐
+│  Posição na palavra: a[¹]b    │
+│  Estados atuais: {q1, q4}     │
+└────────────────────────────────┘
+
+
+LEITURA DO SÍMBOLO 'b' (posição 1)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+De q1 com 'b': GetTargets(q1, 'b') = {q2}
+De q4 com 'b': GetTargets(q4, 'b') = ∅
+
+nextSet = {q2}
+Estados atuais = EpsClosure({q2})
+               = {q2}
+
+┌────────────────────────────────┐
+│  Posição na palavra: ab[²]    │
+│  Estados atuais: {q2}         │
+│                   └── FINAL!  │
+└────────────────────────────────┘
+
+
+VERIFICAÇÃO FINAL
+━━━━━━━━━━━━━━━━
+Estados atuais ∩ Estados finais
+= {q2} ∩ {q2}
+= {q2} ≠ ∅
+
+✅ PALAVRA ACEITA!
+
+
+═══════════════════════════════════════════════════════
+
+CONTRA-EXEMPLO: Palavra "ba"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[⁰]ba  →  Estados: {q0, q3}
+b[¹]a  →  GetTargets de q0 e q3 com 'b' = ∅
+          nextSet = ∅
+          Estados atuais = ∅
+
+---
+
+## 📋 Formato do Arquivo JSON
+
+### Estrutura Completa
 
 ```json
 {
   "alfabeto": ["a", "b"],
-  "estados": ["S0", "S1", "S2"],
-  "estadosI": ["S0"],
-  "estadoF": ["S2"],
+  "estados": ["q0", "q1", "q2"],
+  "estadosI": ["q0"],
+  "estadoF": ["q2"],
   "transicoes": [
-    ["S0", "S1", "a"],
-    ["S1", "S2", "b"],
-    ["S0", "S2", "&"]
+    "q0", "q1", "a",
+    "q1", "q2", "b",
+    "q0", "q2", "&"
   ]
 }
 ```
 
-**Formato das transições:**
-```json
-["estado_origem", "estado_destino", "símbolo"]
+### Anatomia do JSON
+
+```
+┌──────────────────────────────────────────────────────┐
+│  "alfabeto": ["a", "b"]                              │
+│   └─┬─┘       └───┬───┘                              │
+│   Chave      Array de símbolos                       │
+│                                                      │
+│  Símbolos válidos:                                   │
+│  • Letras: "a", "b", "c", ...                        │
+│  • Dígitos: "0", "1", "2", ...                       │
+│  • Épsilon: "&" (transição vazia)                    │
+└──────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────┐
+│  "transicoes": [                                     │
+│    "q0", "q1", "a",    ← Transição 1                 │
+│     │     │     │                                    │
+│     │     │     └─ Símbolo                           │
+│     │     └─ Estado destino                          │
+│     └─ Estado origem                                 │
+│                                                      │
+│    "q1", "q2", "b"     ← Transição 2                 │
+│  ]                                                   │
+│                                                      │
+│  Representa:                                         │
+│     q0 --a--> q1                                     │
+│     q1 --b--> q2                                     │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Símbolo especial:**
-- `"&"` representa a transição épsilon (ε)
+### Exemplo Completo: AFN-ε
+
+```json
+{
+  "alfabeto": ["0", "1"],
+  "estados": ["q0", "q1", "q2", "q3"],
+  "estadosI": ["q0"],
+  "estadoF": ["q3"],
+  "transicoes": [
+    "q0", "q1", "&",
+    "q0", "q2", "&",
+    "q1", "q1", "0",
+    "q1", "q3", "1",
+    "q2", "q2", "1",
+    "q2", "q3", "0"
+  ]
+}
+```
+
+**Representação Visual:**
+
+```
+         ε
+    ┌────────→ q1 ─────┐
+    │          ↺ 0     │ 1
+   q0                   ↓
+    │          ↺ 1     q3 (final)
+    └────────→ q2 ─────┘
+         ε         0
+```
 
 ---
 
-## 7. Exemplos Práticos de Uso
+## 🎯 Exemplos Práticos
 
-### 7.1 Testando uma palavra
+### Exemplo 1: Testando Palavras no Terminal
 
 ```bash
-$ ./main data/automato.json
+$ cd pascal
+$ ./main ../data/automato.json
 
-Menu:
-1. Converter múltiplos iniciais em AFN-ε
-2. Remover épsilon
-3. Converter AFN→AFD
-4. Minimizar AFD
-5. Testar palavras
-6. Imprimir autômato
-0. Sair
+╔════════════════════════════════╗
+║      MENU PRINCIPAL            ║
+╠════════════════════════════════╣
+║  1. Converter iniciais         ║
+║  2. Remover épsilon            ║
+║  3. AFN → AFD                  ║
+║  4. Minimizar AFD              ║
+║  5. Testar palavras            ║
+║  6. Mostrar autômato           ║
+║  0. Sair                       ║
+╚════════════════════════════════╝
 
 Escolha: 5
 
-Modo de entrada:
-(f) arquivo
-(t) terminal
-Escolha: t
+Testar palavras de (f)ile ou (t)erminal? [f/t]: t
 
-Digite a palavra: ab
-Resultado: ACEITA ✓
+Digite palavras ("sair" para terminar):
 
-Digite a palavra: ba
-Resultado: REJEITADA ✗
+> ab
+✓ ab → True (ACEITA)
+
+> ba
+✗ ba → False (REJEITADA)
+
+> aab
+✓ aab → True (ACEITA)
+
+> (vazia)
+✗ (vazia) → False (REJEITADA)
+
+> sair
 ```
 
-### 7.2 Convertendo AFN para AFD
+### Exemplo 2: Testando de Arquivo
 
+**Conteúdo de `palavras_aceitas.txt`:**
+```
+ab
+aab
+aaab
+abb
+abbb
+```
+
+**Execução:**
 ```bash
+Escolha: 5
+Testar palavras de (f)ile ou (t)erminal? [f/t]: f
+Caminho do arquivo: ../data/palavras_aceitas.txt
+
+Resultados:
+┌──────────┬──────────┐
+│ Palavra  │ Aceita?  │
+├──────────┼──────────┤
+│ ab       │ ✓ True   │
+│ aab      │ ✓ True   │
+│ aaab     │ ✓ True   │
+│ abb      │ ✗ False  │
+│ abbb     │ ✗ False  │
+└──────────┴──────────┘
+```
+
+### Exemplo 3: Fluxo Completo de Transformação
+
+```
+PASSO 1: Carregar AFN-ε
+━━━━━━━━━━━━━━━━━━━━━━
+
+Escolha: 6 (Mostrar autômato)
+
+--- Automato ---
+Alfabeto: a b
+Estados: q0 q1 q2
+Iniciais: q0 q1
+Finais: q2
+Transicoes:
+  q0 --&--> q1
+  q1 --a--> q2
+  q0 --b--> q2
+
+
+PASSO 2: Converter Múltiplos Iniciais
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Escolha: 1
+
+✓ Novo inicial criado: Qi0
+
+--- Automato ---
+Iniciais: Qi0
+Transicoes:
+  Qi0 --&--> q0
+  Qi0 --&--> q1
+  q0 --&--> q1
+  q1 --a--> q2
+  q0 --b--> q2
+
+
+PASSO 3: Remover Épsilon
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Escolha: 2
+
+✓ Removidas transições eps (&).
+
+--- Automato ---
+Transicoes:
+  Qi0 --a--> q2
+  Qi0 --b--> q2
+  q0 --a--> q2
+  q0 --b--> q2
+  q1 --a--> q2
+
+
+PASSO 4: Converter para AFD
+━━━━━━━━━━━━━━━━━━━━━━━━
+
 Escolha: 3
-Convertendo AFN para AFD...
 
-Automato DFA:
-Estados: S0 S1 S2
-Inicial: S0
-Finais: S2
-Transições:
-  S0 --(a)--> S1
-  S1 --(b)--> S2
+✓ Construído AFD por subconjuntos.
+
+--- Automato ---
+Estados: S0 S1
+Iniciais: S0
+Finais: S1
+Transicoes:
+  S0 --a--> S1
+  S0 --b--> S1
+
+
+PASSO 5: Minimizar AFD
+━━━━━━━━━━━━━━━━━━━━━
+
+Escolha: 4
+
+✓ AFD minimizado (Hopcroft).
+
+--- Automato ---
+Estados: M0 M1
+Iniciais: M0
+Finais: M1
+Transicoes:
+  M0 --a--> M1
+  M0 --b--> M1
+
+✅ Autômato mínimo alcançado!
 ```
 
 ---
 
-## 8. Dicas de Debugging
+## 🔧 Troubleshooting
 
-### 8.1 Imprimindo valores intermediários
+### ❌ Erro: "Can't open file 'u_types.pas'"
 
-Adicione `WriteLn` para debug:
-
-```pascal
-// Antes de processar
-WriteLn('Estados atuais: ', Length(current), ' estados');
-for i := 0 to High(current) do
-  WriteLn('  ', current[i]);
+**Sintoma:**
+```
+Fatal: Can't open file "u_types.pas"
 ```
 
-### 8.2 Verificando o parse do JSON
+**Causa:** Compilando do diretório errado.
 
-```pascal
-// No main.pas, adicione após cada ExtractStringsFromArray:
-WriteLn('Alfabeto lido: ');
-for i := 0 to High(alphabet) do
-  WriteLn('  ', alphabet[i]);
-```
-
-### 8.3 Testando funções isoladamente
-
-Crie um programa de teste:
-
-```pascal
-program teste_epsclosure;
-uses u_types, u_automaton;
-
-var
-  trans: TTransArray;
-  result: TStrArray;
-begin
-  // Criar transições de teste
-  SetLength(trans, 2);
-  trans[0].src := 'q0'; trans[0].dst := 'q1'; trans[0].sym := '&';
-  trans[1].src := 'q1'; trans[1].dst := 'q2'; trans[1].sym := '&';
-  
-  // Testar
-  result := EpsClosure(trans, ['q0']);
-  
-  // Deve retornar: q0, q1, q2
-  WriteLn('Resultado: ', Length(result), ' estados');
-end.
-```
-
----
-
-## 9. Troubleshooting
-
-### Problema: "Error: Can't open file 'u_types.pas'"
-
-**Solução:** Certifique-se de estar no diretório `pascal/` ao compilar:
+**Solução:**
 ```bash
-cd pascal
-fpc main.pas
+# ✗ ERRADO (raiz do projeto)
+$ fpc main.pas
+
+# ✓ CORRETO (diretório pascal/)
+$ cd pascal/
+$ fpc main.pas
 ```
 
 ---
 
-### Problema: "Segmentation fault"
+### ❌ Erro: "Segmentation fault"
 
-**Causas comuns:**
-1. Array não inicializado
-2. Acesso fora dos limites
+**Sintoma:**
+```bash
+$ ./main
+Segmentation fault (core dumped)
+```
 
-**Solução:** Use `SetLength` antes de usar arrays:
+**Causas Comuns:**
+
+1. **Array não inicializado**
+   ```pascal
+   var
+     arr: TStrArray;
+   begin
+     arr[0] := 'valor';  // ✗ ERRO! Tamanho não definido
+   end;
+   ```
+
+   **Correção:**
+   ```pascal
+   var
+     arr: TStrArray;
+   begin
+     SetLength(arr, 10);  // ✓ Define tamanho primeiro
+     arr[0] := 'valor';
+   end;
+   ```
+
+2. **Acesso fora dos limites**
+   ```pascal
+   var
+     arr: TStrArray;
+   begin
+     SetLength(arr, 5);
+     arr[10] := 'x';  // ✗ ERRO! Índice 10 não existe
+   end;
+   ```
+
+---
+
+### ❌ Erro: String truncada em 255 caracteres
+
+**Sintoma:**
+Arquivo JSON grande não é lido corretamente.
+
+**Causa:** Falta `{$H+}`.
+
+**Solução:**
 ```pascal
+{$mode fpc}{$H+}  // ✓ Adicionar no início de CADA unit
+
+unit u_exemplo;
+// ... resto do código
+```
+
+---
+
+### ❌ Erro: "Arquivo não encontrado"
+
+**Sintoma:**
+```
+Erro ao ler arquivo: data/automato.json
+```
+
+**Diagnóstico:**
+```bash
+# Verificar caminho atual
+$ pwd
+/home/user/LFA-Automato/pascal
+
+# Verificar se arquivo existe
+$ ls -la ../data/automato.json
+-rw-r--r-- 1 user user 245 Oct 23 10:30 ../data/automato.json
+```
+
+**Soluções:**
+
+```bash
+# Opção 1: Usar caminho absoluto
+$ ./main /home/user/LFA-Automato/data/automato.json
+
+# Opção 2: Usar caminho relativo correto
+$ ./main ../data/automato.json
+
+# Opção 3: Executar do diretório raiz
+$ cd ..
+$ ./pascal/main data/automato.json
+```
+
+---
+
+### ❌ Warning: "Function result variable does not seem to be initialized"
+
+**Sintoma:**
+```
+Warning: Function result variable of a managed type does not seem to be initialized
+```
+
+**Causa:** Função não inicializa o retorno em todos os caminhos.
+
+**Exemplo com Problema:**
+```pascal
+function BuscarEstado(const A: TStrArray; const S: AnsiString): LongInt;
 var
-  arr: TStrArray;
+  i: Integer;
 begin
-  SetLength(arr, 10);  // SEMPRE faça isso primeiro!
-  arr[0] := 'valor';
+  for i := 0 to High(A) do
+    if A[i] = S then
+      BuscarEstado := i;  // ✗ E se não achar?
+end;
+```
+
+**Correção:**
+```pascal
+function BuscarEstado(const A: TStrArray; const S: AnsiString): LongInt;
+var
+  i: Integer;
+begin
+  BuscarEstado := -1;  // ✓ Inicializa primeiro!
+  
+  for i := 0 to High(A) do
+    if A[i] = S then
+    begin
+      BuscarEstado := i;
+      Exit;  // ✓ Sai imediatamente
+    end;
 end;
 ```
 
 ---
 
-### Problema: String truncada em 255 caracteres
+## 📚 Referências e Recursos
 
-**Causa:** Falta a diretiva `{$H+}`
+### Livros
 
-**Solução:** Adicione no início do arquivo:
-```pascal
-{$mode fpc}{$H+}
-```
+- **"Introduction to Automata Theory, Languages, and Computation"**  
+  Hopcroft, Motwani, Ullman (3ª edição)
+
+- **"Introdução à Teoria da Computação"**  
+  Michael Sipser (tradução portuguesa)
+
+### Documentação Online
+
+- [Free Pascal Wiki](https://wiki.freepascal.org/)
+- [Free Pascal Reference Guide](https://www.freepascal.org/docs-html/ref/ref.html)
+
+### Ferramentas Úteis
+
+| Ferramenta | Descrição | Link |
+|------------|-----------|------|
+| **JFLAP** | Simulador visual de autômatos | [jflap.org](http://www.jflap.org/) |
+| **Graphviz** | Geração de diagramas de grafos | [graphviz.org](https://graphviz.org/) |
+| **Automaton Simulator** | Simulador web interativo | [automatonsimulator.com](https://automatonsimulator.com/) |
 
 ---
 
-## 10. Referências e Recursos Adicionais
+## 🚀 Comandos Úteis
 
-### 10.1 Livros e Materiais
-
-- **"Introduction to Automata Theory"** - Hopcroft, Motwani, Ullman
-- **Documentação do Free Pascal:** https://www.freepascal.org/docs.html
-
-### 10.2 Ferramentas Úteis
-
-- **JFLAP:** Software para visualizar autômatos
-- **Graphviz:** Para gerar diagramas de autômatos
-
-### 10.3 Comandos Úteis
+### Compilação Avançada
 
 ```bash
-# Compilar com warnings extras
+# Compilar com avisos detalhados
 fpc -vw main.pas
 
-# Compilar com otimização
+# Compilar com otimização máxima
 fpc -O3 main.pas
 
-# Gerar informações de debug
+# Compilar com informações de debug
 fpc -g main.pas
 
-# Limpar arquivos compilados
-rm *.o *.ppu main
+# Compilar e mostrar estatísticas
+fpc -vl main.pas
+```
+
+### Limpeza de Arquivos
+
+```bash
+# Remover arquivos compilados
+rm *.o *.ppu *.res main
+
+# Ou criar um script de limpeza
+cat > clean.sh << 'EOF'
+#!/bin/bash
+rm -f *.o *.ppu *.res link*.res main
+echo "✓ Arquivos compilados removidos"
+EOF
+
+chmod +x clean.sh
+./clean.sh
+```
+
+### Análise de Memória (Valgrind)
+
+```bash
+# Detectar vazamentos de memória
+valgrind --leak-check=full ./main ../data/automato.json
 ```
 
 ---
 
-## 11. Contribuindo para o Projeto
+## 🎓 Contribuindo
 
-### 11.1 Adicionando um novo algoritmo
+### Adicionando Novo Algoritmo
 
-1. Declare a função em `u_automaton.pas` (seção `interface`)
-2. Implemente na seção `implementation`
-3. Adicione uma opção no menu em `u_io.pas`
-4. Documente o algoritmo neste README
+```
+PASSO 1: Declarar em u_automaton.pas (interface)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### 11.2 Padrão de Código
+interface
+  // ... funções existentes ...
+  procedure MeuNovoAlgoritmo(var States: TStrArray; ...);
 
-- Use nomes descritivos em português
-- Comente algoritmos complexos
-- Teste com diferentes autômatos
+
+PASSO 2: Implementar em u_automaton.pas (implementation)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+implementation
+  procedure MeuNovoAlgoritmo(var States: TStrArray; ...);
+  begin
+    // Código do algoritmo...
+    WriteLn('Algoritmo executado!');
+  end;
+
+
+PASSO 3: Adicionar opção no menu (u_io.pas)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+procedure ShowMenu(...);
+begin
+  while True do
+  begin
+    WriteLn('7) Meu novo algoritmo');  // Nova opção
+    case op of
+      // ... casos existentes ...
+      '7': MeuNovoAlgoritmo(states, ...);
+    end;
+  end;
+end;
+
+
+PASSO 4: Documentar no README.md
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Adicionar seção explicando o algoritmo com:
+  • Objetivo
+  • Pseudocódigo
+  • Exemplo visual
+  • Complexidade
+```
 
 ---
 
+## 📄 Licença
+
+Este projeto foi desenvolvido para fins educacionais como parte da disciplina de **Linguagens Formais e Autômatos**.
+
+---
+
+## ✨ Agradecimentos
+
+Desenvolvido com 💙 usando Free Pascal.
+
+**Versão:** 2.0  
 **Última atualização:** Outubro de 2025
-**Versão:** 1.0
+
+---
+
+<div align="center">
+
+**[⬆ Voltar ao topo](#-simulador-de-autômatos-finitos-em-pascal)**
+
+</div>
