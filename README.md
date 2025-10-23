@@ -1176,7 +1176,6 @@ Transicoes:
 
 ✅ Autômato mínimo alcançado!
 ```
-
 ---
 
 ## 🔧 Troubleshooting
@@ -1401,7 +1400,7 @@ chmod +x clean.sh
 valgrind --leak-check=full ./main ../data/automato.json
 ```
 
----
+## Compilação e Execução
 
 ## 🎓 Contribuindo
 
@@ -1453,7 +1452,7 @@ Adicionar seção explicando o algoritmo com:
   • Complexidade
 ```
 
----
+Isso irá compilar o programa principal e todas as `units` associadas, gerando um executável chamado `main`.
 
 ## 📄 Licença
 
