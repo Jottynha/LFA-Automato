@@ -400,7 +400,7 @@ $ ./main ../data/automato.json
 ║  0. Sair                       ║
 ╚════════════════════════════════╝
 ---
-
+```
 ## 🧮 Algoritmos de Autômatos
 
 ### 1️⃣ Fecho-Épsilon (Epsilon Closure)
@@ -418,7 +418,7 @@ EXEMPLO DE AUTÔMATO:
          ↓
         q3
 
-
+```
 PASSO A PASSO - EpsClosure({q0}):
 ```
 ┌─────────────────────────────────────────────────┐
