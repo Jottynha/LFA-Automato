@@ -938,7 +938,7 @@ b[¹]a  →  GetTargets de q0 e q3 com 'b' = ∅
           Estados atuais = ∅
 
 ---
-
+```
 ## 📋 Formato do Arquivo JSON
 
 ### Estrutura Completa
