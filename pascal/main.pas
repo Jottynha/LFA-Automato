@@ -9,7 +9,7 @@ program teste;
   
 }
 uses
-  u_types, u_utils, u_automaton, u_io;
+  u_types, u_utils, u_automaton, u_io, u_logger;
 
 var
   path, json: AnsiString;
@@ -20,6 +20,9 @@ var
   transicoes: TTransArray;
 
 begin
+  { Inicializar logger }
+  InitLogger('output/execution_log.txt');
+  
   if ParamCount >= 1 then path := ParamStr(1) else path := 'data/automato.json';
   json := ReadAllText(path);
   if json = '' then
@@ -75,4 +78,7 @@ begin
 
   { mostrar menu }
   ShowMenu(alphabet, states, initials, finals, transicoes);
+  
+  { Fechar logger }
+  CloseLogger;
 end.

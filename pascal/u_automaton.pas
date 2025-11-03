@@ -5,7 +5,7 @@ unit u_automaton;
 interface
 
 uses
-  u_types, u_utils;
+  u_types, u_utils, u_logger;
 
 const
   EPS: AnsiString = '&'; { símbolo interno para épsilon }
@@ -26,6 +26,11 @@ procedure ConvertMultipleInitialsToAFNEps(var States, Initials: TStrArray; var T
 procedure RemoveEpsilon(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
 procedure NFAToDFA(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
 procedure MinimizeDFAHopcroft(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+
+{ Detecção de tipo de autômato }
+function HasEpsilonTransitions(const Trans: TTransArray): Boolean;
+function IsDeterministic(const Trans: TTransArray): Boolean;
+function GetAutomatonType(const Trans: TTransArray): AnsiString;
 
 { I/O e utilitários }
 procedure TestarPalavras(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
@@ -139,17 +144,50 @@ end;
 function EpsClosure(const Trans: TTransArray; const StartStates: TStrArray): TStrArray;
 var
   stack, resArr: TStrArray;
-  i: LongInt;
+  i, iteration: LongInt;
   s: AnsiString;
   tgts: TStrArray;
+  content: AnsiString;
 begin
+  LogHeader('FECHO-ÉPSILON (EPSILON CLOSURE)');
+  
   resArr := StartStates;
   stack := StartStates;
+  iteration := 0;
+  
+  { Log inicialização }
+  content := 'Estados iniciais: ';
+  for i := 0 to High(StartStates) do
+  begin
+    if i > 0 then content := content + ', ';
+    content := content + StartStates[i];
+  end;
+  LogBox('INICIALIZAÇÃO', content + #10 + 'Resultado = ' + KeyFromSet(resArr) + #10 + 'Pilha     = ' + KeyFromSet(stack));
+  
   while Length(stack) > 0 do
   begin
+    Inc(iteration);
     s := stack[High(stack)];
     SetLength(stack, Length(stack) - 1);
     tgts := GetTargets(Trans, s, EPS);
+    
+    { Log iteração }
+    content := 'Desempilha: ' + s + #10;
+    if Length(tgts) = 0 then
+      content := content + 'Transições E de ' + s + ': {} (nenhuma)' + #10
+    else
+    begin
+      content := content + 'Transições E de ' + s + ': {';
+      for i := 0 to High(tgts) do
+      begin
+        if i > 0 then content := content + ', ';
+        content := content + tgts[i];
+      end;
+      content := content + '}' + #10;
+      content := content + 'Adiciona ao resultado e à pilha' + #10;
+    end;
+    content := content + #10 + 'Resultado = ' + KeyFromSet(resArr);
+    
     if Length(tgts) = 0 then Continue;
     for i := 0 to High(tgts) do
       if IndexOfStr(resArr, tgts[i]) = -1 then
@@ -159,7 +197,19 @@ begin
         SetLength(stack, Length(stack) + 1);
         stack[High(stack)] := tgts[i];
       end;
+    
+    content := content + #10 + 'Pilha     = ';
+    if Length(stack) = 0 then
+      content := content + '[]  ← VAZIA!'
+    else
+      content := content + KeyFromSet(stack);
+    
+    LogBox('ITERAÇÃO ' + IntToStrPure(iteration), content);
   end;
+  
+  LogLine('✓ RESULTADO FINAL: EpsClosure(' + KeyFromSet(StartStates) + ') = ' + KeyFromSet(resArr));
+  LogSeparator;
+  
   EpsClosure := resArr;
 end;
 
@@ -171,32 +221,89 @@ var
   i, j: LongInt;
   ch: AnsiString;
   ans: Boolean;
+  content, marker: AnsiString;
 begin
+  LogHeader('SIMULAÇÃO DE ACEITAÇÃO DE PALAVRA');
+  LogLine('Palavra: "' + Word + '"');
+  LogLine('');
+  
   current := EpsClosure(Trans, Initials);
+  
+  content := 'Estados iniciais: ' + KeyFromSet(Initials) + #10;
+  content := content + 'Fecho-E: ' + KeyFromSet(current);
+  LogBox('INICIALIZAÇÃO', content);
+  
   if Length(Word) = 0 then
   begin
     ans := IntersectsStr(current, Finals);
+    LogLine('Palavra vazia!');
+    if ans then
+      LogLine('[OK] Estados atuais INTER Finais = ' + KeyFromSet(current) + ' INTER ' + KeyFromSet(Finals) + ' != {}')
+    else
+      LogLine('[FALHA] Estados atuais INTER Finais = {}');
+    LogSeparator;
     Accepts := ans;
     Exit;
   end;
+  
   for i := 1 to Length(Word) do
   begin
     ch := Word[i];
+    
+    { Criar marcador visual da posição }
+    marker := '';
+    for j := 1 to Length(Word) do
+    begin
+      if j = i then
+        marker := marker + '[' + Word[j] + ']'
+      else
+        marker := marker + Word[j];
+    end;
+    
     if IndexOfStr(Alphabet, ch) = -1 then
     begin
+      LogLine('[ERRO] Símbolo "' + ch + '" não pertence ao alfabeto!');
+      LogSeparator;
       Accepts := False;
       Exit;
     end;
+    
     SetLength(nextSet, 0);
+    content := 'Posição na palavra: ' + marker + #10;
+    content := content + 'Lendo símbolo: "' + ch + '"' + #10;
+    content := content + 'Estados atuais: ' + KeyFromSet(current) + #10#10;
+    
     if Length(current) > 0 then
+    begin
+      content := content + 'Calculando próximos estados:' + #10;
       for j := 0 to High(current) do
       begin
         tg := GetTargets(Trans, current[j], ch);
+        if Length(tg) > 0 then
+          content := content + '  ' + current[j] + ' --' + ch + '--> ' + KeyFromSet(tg) + #10;
         nextSet := UnionStr(nextSet, tg);
       end;
+    end;
+    
     current := EpsClosure(Trans, nextSet);
+    content := content + #10 + 'Próximos estados (com fecho-E): ' + KeyFromSet(current);
+    
+    LogBox('LEITURA DO SÍMBOLO "' + ch + '" (posição ' + IntToStrPure(i-1) + ')', content);
   end;
+  
   ans := IntersectsStr(current, Finals);
+  
+  LogBox('VERIFICAÇÃO FINAL', 
+    'Estados finais: ' + KeyFromSet(Finals) + #10 +
+    'Estados atuais: ' + KeyFromSet(current) + #10#10 +
+    'Interseção: ' + KeyFromSet(current) + ' ∩ ' + KeyFromSet(Finals));
+  
+  if ans then
+    LogLine('[OK] PALAVRA ACEITA!')
+  else
+    LogLine('[FALHA] PALAVRA REJEITADA!');
+  
+  LogSeparator;
   Accepts := ans;
 end;
 
@@ -243,11 +350,18 @@ var
   newFinals: TStrArray;
   tg: TStrArray;
   dup: Boolean;
+  content: AnsiString;
 begin
+  LogHeader('REMOÇÃO DE TRANSIÇÕES ÉPSILON');
+  
   SetLength(newTrans, 0);
   SetLength(newFinals, 0);
 
-  { recalcular finais via fecho-ε }
+  { recalcular finais via fecho-E }
+  LogLine('ETAPA 1: Recalcular estados finais');
+  LogLine('------------------------------------');
+  LogLine('');
+  
   if Length(States) > 0 then
   begin
     for i := 0 to High(States) do
@@ -256,6 +370,10 @@ begin
       Ep := EpsClosure(Trans, MakeArray1(p));
       if IntersectsStr(Ep, Finals) then
       begin
+        content := 'Estado ' + p + ': EpsClosure = ' + KeyFromSet(Ep);
+        content := content + #10 + 'Interseção com finais != {} -> É FINAL!';
+        LogBox(p, content);
+        
         if IndexOfStr(newFinals, p) = -1 then
         begin
           SetLength(newFinals, Length(newFinals) + 1);
@@ -264,33 +382,56 @@ begin
       end;
     end;
   end;
+  
+  LogLine('');
+  LogLine('Novos estados finais: ' + KeyFromSet(newFinals));
+  LogLine('');
 
   { construir novas transições (sem &) }
+  LogLine('ETAPA 2: Construir novas transições (sem E)');
+  LogLine('---------------------------------------------');
+  LogLine('');
+  
   if Length(States) > 0 then
   begin
     for i := 0 to High(States) do
     begin
       p := States[i];
       Ep := EpsClosure(Trans, MakeArray1(p));
+      
       if Length(Alphabet) = 0 then Continue;
       for j := 0 to High(Alphabet) do
       begin
         sym := Alphabet[j];
         if sym = EPS then Continue;
+        
         SetLength(temp, 0);
+        content := 'De ' + p + ' com símbolo "' + sym + '":' + #10;
+        content := content + 'EpsClosure(' + p + ') = ' + KeyFromSet(Ep) + #10#10;
+        
         if Length(Ep) > 0 then
           for k := 0 to High(Ep) do
           begin
             q := Ep[k];
             tg := GetTargets(Trans, q, sym);
+            if Length(tg) > 0 then
+              content := content + '  ' + q + ' --' + sym + '--> ' + KeyFromSet(tg) + #10;
             temp := UnionStr(temp, tg);
           end;
+        
         U := EpsClosure(Trans, temp);
+        
         if Length(U) > 0 then
         begin
+          content := content + #10 + 'União dos destinos: ' + KeyFromSet(temp);
+          content := content + #10 + 'Fecho-E: ' + KeyFromSet(U);
+          content := content + #10#10 + 'Novas transições:';
+          
           for k := 0 to High(U) do
           begin
             r := U[k];
+            content := content + #10 + '  ' + p + ' --' + sym + '--> ' + r;
+            
             { AddUnique to newTrans }
             if Length(newTrans) = 0 then
             begin
@@ -317,6 +458,8 @@ begin
               end;
             end;
           end;
+          
+          LogBox('Processando: ' + p + ' com "' + sym + '"', content);
         end;
       end;
     end;
@@ -324,6 +467,12 @@ begin
 
   Trans := newTrans;
   Finals := newFinals;
+  
+  LogLine('');
+  LogLine('✓ Transições épsilon removidas com sucesso!');
+  LogLine('Total de novas transições: ' + IntToStrPure(Length(newTrans)));
+  LogSeparator;
+  
   WriteLn('Removidas transições eps (&).');
 end;
 
@@ -336,6 +485,8 @@ var
   curKey, Ukey, nameT, nameU, sym: AnsiString;
   i, j, p, qq, tidx: LongInt;
   dup: Boolean;
+  iteration: LongInt;
+  content: AnsiString;
 
   function FindNameByKey(const Key: AnsiString): AnsiString;
   var
@@ -435,7 +586,13 @@ var
   end;
 
 begin
+  LogHeader('CONVERSÃO AFN → AFD (CONSTRUÇÃO DE SUBCONJUNTOS)');
+  
   startClosure := EpsClosure(Trans, Initials);
+  
+  content := 'Estados iniciais do AFN: ' + KeyFromSet(Initials) + #10;
+  content := content + 'Fecho-E dos iniciais: ' + KeyFromSet(startClosure);
+  LogBox('INICIALIZAÇÃO', content);
 
   SetLength(keys, 0);
   SetLength(names, 0);
@@ -449,22 +606,34 @@ begin
   EnsureMapping(curKey, nameT);
   SetLength(queue, Length(queue) + 1);
   queue[High(queue)] := curKey;
+  
+  LogLine('Estado inicial do AFD: ' + nameT + ' = ' + curKey);
+  LogLine('');
+  
+  iteration := 0;
 
   while Dequeue(queue, curKey) do
   begin
     if SeenKey(curKey) then Continue;
+    Inc(iteration);
+    
     MarkSeen(curKey);
     Tset := KeyToStates(curKey);
     nameT := FindNameByKey(curKey);
+    
+    content := 'Macro-estado: ' + nameT + ' = ' + curKey + #10;
 
     if IntersectsStr(Tset, Finals) then
     begin
+      content := content + 'Contém estado final → ' + nameT + ' é FINAL ✓' + #10#10;
       if IndexOfStr(newFinals, nameT) = -1 then
       begin
         SetLength(newFinals, Length(newFinals) + 1);
         newFinals[High(newFinals)] := nameT;
       end;
-    end;
+    end
+    else
+      content := content + #10;
 
     if Length(Alphabet) > 0 then
     begin
@@ -472,13 +641,33 @@ begin
       begin
         sym := Alphabet[j];
         if sym = EPS then Continue;
+        
+        content := content + 'Com símbolo "' + sym + '":' + #10;
         SetLength(moveSet, 0);
+        
         if Length(Tset) > 0 then
+        begin
           for i := 0 to High(Tset) do
+          begin
             moveSet := UnionStr(moveSet, GetTargets(Trans, Tset[i], sym));
+            if Length(GetTargets(Trans, Tset[i], sym)) > 0 then
+              content := content + '  ' + Tset[i] + ' --' + sym + '--> ' + KeyFromSet(GetTargets(Trans, Tset[i], sym)) + #10;
+          end;
+        end;
+        
         Uset := EpsClosure(Trans, moveSet);
         Ukey := KeyFromSet(Uset);
         EnsureMapping(Ukey, nameU);
+        
+        if Length(Uset) > 0 then
+        begin
+          content := content + '  União: ' + KeyFromSet(moveSet) + #10;
+          content := content + '  Fecho-E: ' + Ukey + #10;
+          content := content + '  Novo estado: ' + nameU + #10;
+          content := content + '  Transição: ' + nameT + ' --' + sym + '--> ' + nameU + #10#10;
+        end
+        else
+          content := content + '  Nenhum destino' + #10#10;
 
         dup := False;
         if Length(newTrans) > 0 then
@@ -490,7 +679,7 @@ begin
               Break;
             end;
         end;
-        if not dup then
+        if not dup and (Length(Uset) > 0) then
         begin
           SetLength(newTrans, Length(newTrans) + 1);
           newTrans[High(newTrans)].src := nameT;
@@ -505,6 +694,8 @@ begin
         end;
       end;
     end;
+    
+    LogBox('ITERAÇÃO ' + IntToStrPure(iteration) + ': Processando ' + nameT, content);
   end;
 
   States := newStates;
@@ -512,6 +703,13 @@ begin
   Initials[0] := FindNameByKey(KeyFromSet(startClosure));
   Finals := newFinals;
   Trans := newTrans;
+  
+  LogLine('');
+  LogLine('✓ AFD construído com sucesso!');
+  LogLine('Total de estados: ' + IntToStrPure(Length(States)));
+  LogLine('Total de transições: ' + IntToStrPure(Length(Trans)));
+  LogSeparator;
+  
   WriteLn('Construído AFD por subconjuntos.');
 end;
 
@@ -913,13 +1111,58 @@ begin
   WriteLn('AFD minimizado (Hopcroft).');
 end;
 
+{ === DETECÇÃO DE TIPO === }
+
+function HasEpsilonTransitions(const Trans: TTransArray): Boolean;
+var
+  i: LongInt;
+begin
+  HasEpsilonTransitions := False;
+  if Length(Trans) = 0 then Exit;
+  
+  for i := 0 to High(Trans) do
+    if Trans[i].sym = EPS then
+    begin
+      HasEpsilonTransitions := True;
+      Exit;
+    end;
+end;
+
+function IsDeterministic(const Trans: TTransArray): Boolean;
+var
+  i, j: LongInt;
+begin
+  IsDeterministic := True;
+  if Length(Trans) = 0 then Exit;
+  
+  for i := 0 to High(Trans) do
+    for j := i + 1 to High(Trans) do
+      if (Trans[i].src = Trans[j].src) and (Trans[i].sym = Trans[j].sym) then
+      begin
+        IsDeterministic := False;
+        Exit;
+      end;
+end;
+
+function GetAutomatonType(const Trans: TTransArray): AnsiString;
+begin
+  if HasEpsilonTransitions(Trans) then
+    GetAutomatonType := 'AFN-E'
+  else if not IsDeterministic(Trans) then
+    GetAutomatonType := 'AFN'
+  else
+    GetAutomatonType := 'AFD';
+end;
+
 { === IMPRESSÃO === }
 
 procedure PrintAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
 var
   i: LongInt;
+  autoType: AnsiString;
 begin
-  WriteLn('--- Automato ---');
+  autoType := GetAutomatonType(Trans);
+  WriteLn('--- Automato (Tipo: ', autoType, ') ---');
   WriteLn('Alfabeto:');
   if Length(Alphabet) > 0 then
     for i := 0 to High(Alphabet) do WriteLn('  ', Alphabet[i]);
