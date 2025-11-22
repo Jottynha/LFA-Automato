@@ -36,9 +36,9 @@ begin
   if neg then n := -n;
   while n > 0 do
   begin
-    d := n mod 10;
+    d := n mod 10; { dígito menos significativo, binário }
     s := AnsiString(Chr(Ord('0') + d)) + s; 
-    n := n div 10;
+    n := n div 10; { remove o dígito menos significativo }
   end;
   if neg then s := '-' + s;
   IntToStrPure := s;
@@ -46,12 +46,12 @@ end;
 
 function TrimSpaces(const S: AnsiString): AnsiString;
 var
-  l, r: LongInt;
+  l, r: LongInt; {inicio e fim da string sem espaços}
   res: AnsiString;
 begin
   res := '';
   l := 1; r := Length(S);
-  while (l <= r) and (S[l] in [#9, #10, #13, ' ']) do Inc(l); { Enquanto houver espaço no início, avança }
+  while (l <= r) and (S[l] in [#9, #10, #13, ' ']) do Inc(l); { Enquanto houver espaço no início, avança, #9=tab,#10=linha nova }
   while (r >= l) and (S[r] in [#9, #10, #13, ' ']) do Dec(r); { Enquanto houver espaço no fim, recua }
   if l > r then res := '' else res := Copy(S, l, r - l + 1);
   TrimSpaces := res;
@@ -65,10 +65,10 @@ var
   res: AnsiString;
 begin
   res := '';
-  Assign(f, FileName);
+  Assign(f, FileName); {associando Handle ao nome do arquivo}
   {$I-} Reset(f); {$I+}
   okCode := IOResult;
-  if okCode <> 0 then
+  if okCode <> 0 then {erro ao abrir = string vazia}
   begin
     ReadAllText := '';
     Exit;
@@ -76,7 +76,7 @@ begin
   while not Eof(f) do
   begin
     ReadLn(f, line);
-    res := res + line + #10;
+    res := res + line + #10; { final = final + nova linha + line feed(#10) }
   end;
   Close(f);
   ReadAllText := res;

@@ -211,6 +211,10 @@ begin
   LogSeparator;
   
   EpsClosure := resArr;
+  {Detalhe crucial: quando um novo estado é descoberto, ele é adicionado tanto a resArr (resultado final) 
+   quanto a stack (para exploração futura). Essa estratégia garante que todas as transições épsilon sejam seguidas
+   transitivamente. Por exemplo, se há ε-transições A→B→C, 
+   ao processar A descobrimos B, e ao processar B descobrimos C, resultando em closure = A, B, C.}
 end;
 
 { === ACEITAÇÃO === }
