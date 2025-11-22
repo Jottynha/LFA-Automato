@@ -5,7 +5,7 @@ unit u_automaton;
 interface
 
 uses
-  u_types, u_utils, u_logger;
+  u_types, u_utils, u_logger, Process;
 
 const
   EPS: AnsiString = '&'; { símbolo interno para épsilon }
@@ -35,6 +35,8 @@ function GetAutomatonType(const Trans: TTransArray): AnsiString;
 { I/O e utilitários }
 procedure TestarPalavras(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
 procedure PrintAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
+procedure SaveToJSON(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray; const Filename: AnsiString);
+procedure VisualizeAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
 
 implementation
 
@@ -190,7 +192,7 @@ begin
     
     if Length(tgts) = 0 then Continue;
     for i := 0 to High(tgts) do
-      if IndexOfStr(resArr, tgts[i]) = -1 then
+      if IndexOfStr(resArr, tgts[i]) = -1 then {Evita duplicatas}
       begin
         SetLength(resArr, Length(resArr) + 1);
         resArr[High(resArr)] := tgts[i];
@@ -220,6 +222,15 @@ end;
 { === ACEITAÇÃO === }
 
 function Accepts(const Alphabet: TStrArray; const Trans: TTransArray; const Initials, Finals: TStrArray; const Word: AnsiString): Boolean;
+{Inicialização: o algoritmo começa calculando current := EpsClosure(Trans, Initials), 
+ que obtém todos os estados alcançáveis a partir dos iniciais através de transições épsilon. 
+ Isso é fundamental em NFAs com ε-transições, pois o autômato pode "estar" em múltiplos estados simultaneamente
+ antes mesmo de ler qualquer símbolo.
+
+ Caso especial - palavra vazia: se Length(Word) = 0, a função verifica imediatamente 
+ se há interseção entre current e Finals usando IntersectsStr. Uma palavra vazia é aceita se algum estado 
+ no fecho épsilon inicial for também um estado final. A função então retorna com Exit, 
+ evitando processar o loop de leitura.}
 var
   current, nextSet, tg: TStrArray;
   i, j: LongInt;
@@ -346,6 +357,22 @@ begin
 end;
 
 procedure RemoveEpsilon(var Alphabet, States, Initials, Finals: TStrArray; var Trans: TTransArray);
+{
+ETAPA 1 - 
+Recalcular estados finais: um estado se torna final no autômato resultante se seu fecho épsilon
+ contém algum estado final do autômato original. O loop for i := 0 to High(States) percorre cada estado p, 
+ calcula Ep := EpsClosure(Trans, MakeArray1(p)) (todos os estados alcançáveis de p via ε-transições), 
+ e verifica se IntersectsStr(Ep, Finals) retorna verdadeiro. Se sim, p é adicionado a newFinals. 
+ Isso garante que palavras aceitas no autômato original continuem aceitas—se antes uma palavra 
+ levava ao estado q1, que tinha ε-transição para o estado final q2, agora q1 também é marcado como final.
+
+ETAPA 2 - Construir novas transições: esta é a parte mais complexa.
+ Para cada estado p e cada símbolo não-épsilon sym do alfabeto, o algoritmo calcula quais estados 
+ são alcançáveis lendo sym e seguindo quaisquer ε-transições antes e depois. 
+ Primeiro, calcula Ep := EpsClosure(Trans, MakeArray1(p)) para obter todos os estados acessíveis de p via ε. 
+ Depois, para cada estado q em Ep, busca os destinos diretos de q lendo sym usando GetTargets(Trans, q, sym), 
+ acumulando-os em temp com UnionStr.
+}
 var
   i, j, k, t: LongInt;
   p, q, r, sym: AnsiString;
@@ -1235,6 +1262,93 @@ begin
       WriteLn(' -> ', ok);
     end;
   end;
+end;
+
+{ === SALVAR EM JSON === }
+procedure SaveToJSON(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray; const Filename: AnsiString);
+var
+  f: Text;
+  i: LongInt;
+begin
+  Assign(f, Filename);
+  Rewrite(f);
+  
+  WriteLn(f, '{');
+  
+  { Alfabeto }
+  Write(f, '  "alfabeto": [');
+  for i := 0 to High(Alphabet) do
+  begin
+    Write(f, '"', Alphabet[i], '"');
+    if i < High(Alphabet) then Write(f, ', ');
+  end;
+  WriteLn(f, '],');
+  
+  { Estados }
+  Write(f, '  "estados": [');
+  for i := 0 to High(States) do
+  begin
+    Write(f, '"', States[i], '"');
+    if i < High(States) then Write(f, ', ');
+  end;
+  WriteLn(f, '],');
+  
+  { Estados iniciais }
+  Write(f, '  "estadosI": [');
+  for i := 0 to High(Initials) do
+  begin
+    Write(f, '"', Initials[i], '"');
+    if i < High(Initials) then Write(f, ', ');
+  end;
+  WriteLn(f, '],');
+  
+  { Estados finais }
+  Write(f, '  "estadoF": [');
+  for i := 0 to High(Finals) do
+  begin
+    Write(f, '"', Finals[i], '"');
+    if i < High(Finals) then Write(f, ', ');
+  end;
+  WriteLn(f, '],');
+  
+  { Transições }
+  WriteLn(f, '  "transicoes": [');
+  for i := 0 to High(Trans) do
+  begin
+    Write(f, '    ["', Trans[i].src, '", "', Trans[i].dst, '", "', Trans[i].sym, '"]');
+    if i < High(Trans) then WriteLn(f, ',') else WriteLn(f);
+  end;
+  WriteLn(f, '  ]');
+  
+  WriteLn(f, '}');
+  Close(f);
+end;
+
+{ === VISUALIZAR AUTÔMATO === }
+procedure VisualizeAutomaton(const Alphabet, States, Initials, Finals: TStrArray; const Trans: TTransArray);
+var
+  tempJson, cmd, output: AnsiString;
+  exitCode: LongInt;
+begin
+  { Salva autômato em JSON temporário }
+  tempJson := 'output/temp_automaton.json';
+  WriteLn('Salvando autômato em: ', tempJson);
+  SaveToJSON(Alphabet, States, Initials, Finals, Trans, tempJson);
+  
+  { Monta comando Python }
+  cmd := 'cd python && python3 visualize.py ../' + tempJson + ' ../output/automaton';
+  
+  WriteLn('Gerando visualização...');
+  WriteLn('Executando: ', cmd);
+  
+  { Executa comando usando RunCommand da unit Process }
+  if RunCommand('/bin/sh', ['-c', cmd], output) then
+  begin
+    WriteLn('Visualização gerada com sucesso!');
+    if output <> '' then WriteLn(output);
+  end
+  else
+    WriteLn('Erro ao gerar visualização.');
 end;
 
 end.

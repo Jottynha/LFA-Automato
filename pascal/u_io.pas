@@ -26,6 +26,7 @@ begin
     WriteLn('5) Testar palavras (arquivo/terminal)');
     WriteLn('6) Mostrar autômato');
     WriteLn('7) Mostrar tipo do autômato');
+    WriteLn('8) Visualizar grafo do autômato (gera PNG)');
     WriteLn('0) Sair');
     Write('Escolha: '); ReadLn(op);
     
@@ -114,6 +115,7 @@ begin
         end;
         WriteLn('========================================');
       end;
+      '8': VisualizeAutomaton(alphabet, states, initials, finals, transicoes);
       '0': Exit;
     else
       WriteLn('Opção inválida.');
